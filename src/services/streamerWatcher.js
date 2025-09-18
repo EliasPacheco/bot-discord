@@ -8,8 +8,11 @@ class StreamerWatcher {
     constructor(client) {
         this.client = client;
         this.streamers = [];
-        this.checkInterval = 60000; // Check every minute
+        this.checkInterval = 30000; // Check every 10 seconds
         this.notificacaoPath = path.join(__dirname, '../data/notificacao.json');
+        
+        // Sistema de controle de notificações já enviadas
+        this.notifiedStreams = new Set(); // Guarda streamers que já foram notificados como ao vivo
     }
 
     async loadStreamers() {
@@ -27,12 +30,27 @@ class StreamerWatcher {
 
     async checkStreamers() {
         await this.loadStreamers();
+        
         for (const streamer of this.streamers) {
+            const streamKey = `${streamer.type}:${streamer.name}`;
             console.log(`[DEBUG] Checando streamer: ${streamer.name} (${streamer.type})`);
+            
             const isLive = await this.checkIfLive(streamer);
             console.log(`[DEBUG] Status de ${streamer.name}: ${isLive ? 'AO VIVO' : 'offline'}`);
+            
             if (isLive) {
-                this.notifyChannel(streamer);
+                // Só notificar se ainda não foi notificado
+                if (!this.notifiedStreams.has(streamKey)) {
+                    console.log(`[INFO] ${streamer.name} entrou ao vivo! Enviando notificação...`);
+                    this.notifyChannel(streamer);
+                    this.notifiedStreams.add(streamKey);
+                }
+            } else {
+                // Se estava ao vivo e agora está offline, remover da lista de notificados
+                if (this.notifiedStreams.has(streamKey)) {
+                    console.log(`[INFO] ${streamer.name} saiu do ar.`);
+                    this.notifiedStreams.delete(streamKey);
+                }
             }
         }
     }
@@ -67,38 +85,47 @@ class StreamerWatcher {
 
     async checkKickLive(username) {
         try {
+            console.log(`[DEBUG] Verificando Kick para ${username} via API v2`);
+            
+            // Usar endpoint v2 específico como indicado pelo usuário
             const res = await fetch(`https://kick.com/api/v2/channels/${username.toLowerCase()}`, {
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                     'Accept': 'application/json',
-                    'Accept-Language': 'en-US,en;q=0.9'
+                    'Referer': 'https://kick.com/'
                 }
             });
 
             if (!res.ok) {
-                console.log(`[DEBUG] Kick retornou status ${res.status} para ${username}`);
+                console.log(`[WARNING] API v2 falhou (${res.status}) para ${username}`);
                 return false;
             }
 
             const data = await res.json();
-            console.log('[DEBUG] Resposta do Kick:', JSON.stringify(data));
+            console.log(`[DEBUG] Dados do canal ${username}:`, JSON.stringify({
+                id: data.id,
+                slug: data.slug,
+                is_banned: data.is_banned,
+                livestream: data.livestream ? 'presente' : 'ausente'
+            }));
 
-            // Se houver livestream e ela estiver marcada como online
-            if (data.livestream && data.livestream.is_live) {
+            // Verifica se o streamer está realmente ao vivo
+            const isLive = data.livestream !== null && !data.is_banned;
+            
+            if (isLive) {
+                console.log(`[LIVE] ${username} está AO VIVO no Kick!`);
                 return true;
+            } else {
+                console.log(`[DEBUG] ${username} está offline no Kick`);
+                return false;
             }
 
-            // Algumas vezes pode ter 'livestream' mas sem 'is_live', então também podemos checar a URL de playback
-            if (data.playback_url) {
-                return true;
-            }
-
-            return false;
         } catch (err) {
-            console.error('[ERRO] Falha ao checar live no Kick:', err);
+            console.error(`[ERRO] Falha ao verificar ${username} no Kick:`, err.message);
             return false;
         }
     }
+
 
 
     // Adapte seu método notifyChannel:

@@ -24,7 +24,7 @@ const commands = [
             option.setName('nome')
                 .setDescription('Nome do streamer')
                 .setRequired(true)
-                .setAutocomplete(true) // <-- Adicione isto
+                .setAutocomplete(true)
     ),
     new SlashCommandBuilder()
         .setName('removerkick')
