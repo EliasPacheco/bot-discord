@@ -1,16 +1,16 @@
 const fs = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js'); // <-- ADICIONE ESTA LINHA
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 require('dotenv').config();
 
 class StreamerWatcher {
     constructor(client) {
         this.client = client;
         this.streamers = [];
-        this.checkInterval = 30000; // Check every 10 seconds
+        this.checkInterval = 30000; // Check every 30 seconds
         this.notificacaoPath = path.join(__dirname, '../data/notificacao.json');
-        
+
         // Sistema de controle de notificações já enviadas
         this.notifiedStreams = new Set(); // Guarda streamers que já foram notificados como ao vivo
     }
@@ -30,19 +30,19 @@ class StreamerWatcher {
 
     async checkStreamers() {
         await this.loadStreamers();
-        
+
         for (const streamer of this.streamers) {
             const streamKey = `${streamer.type}:${streamer.name}`;
             console.log(`[DEBUG] Checando streamer: ${streamer.name} (${streamer.type})`);
-            
-            const isLive = await this.checkIfLive(streamer);
-            console.log(`[DEBUG] Status de ${streamer.name}: ${isLive ? 'AO VIVO' : 'offline'}`);
-            
-            if (isLive) {
+
+            const liveData = await this.checkIfLive(streamer);
+            console.log(`[DEBUG] Status de ${streamer.name}: ${liveData ? 'AO VIVO' : 'offline'}`);
+
+            if (liveData) {
                 // Só notificar se ainda não foi notificado
                 if (!this.notifiedStreams.has(streamKey)) {
                     console.log(`[INFO] ${streamer.name} entrou ao vivo! Enviando notificação...`);
-                    this.notifyChannel(streamer);
+                    this.notifyChannel(streamer, liveData);
                     this.notifiedStreams.add(streamKey);
                 }
             } else {
@@ -61,7 +61,7 @@ class StreamerWatcher {
         } else if (streamer.type === 'kick') {
             return this.checkKickLive(streamer.name);
         }
-        return false;
+        return null;
     }
 
     async checkTwitchLive(username) {
@@ -80,13 +80,16 @@ class StreamerWatcher {
             }
         });
         const data = await res.json();
-        return data.data && data.data.length > 0 && data.data[0].type === 'live';
+        if (data.data && data.data.length > 0 && data.data[0].type === 'live') {
+            return data.data[0];
+        }
+        return null;
     }
 
     async checkKickLive(username) {
         try {
             console.log(`[DEBUG] Verificando Kick para ${username} via API v2`);
-            
+
             // Usar endpoint v2 específico como indicado pelo usuário
             const res = await fetch(`https://kick.com/api/v2/channels/${username.toLowerCase()}`, {
                 headers: {
@@ -98,7 +101,7 @@ class StreamerWatcher {
 
             if (!res.ok) {
                 console.log(`[WARNING] API v2 falhou (${res.status}) para ${username}`);
-                return false;
+                return null;
             }
 
             const data = await res.json();
@@ -111,25 +114,25 @@ class StreamerWatcher {
 
             // Verifica se o streamer está realmente ao vivo
             const isLive = data.livestream !== null && !data.is_banned;
-            
+
             if (isLive) {
                 console.log(`[LIVE] ${username} está AO VIVO no Kick!`);
-                return true;
+                return data.livestream;
             } else {
                 console.log(`[DEBUG] ${username} está offline no Kick`);
-                return false;
+                return null;
             }
 
         } catch (err) {
             console.error(`[ERRO] Falha ao verificar ${username} no Kick:`, err.message);
-            return false;
+            return null;
         }
     }
 
 
 
     // Adapte seu método notifyChannel:
-    notifyChannel(streamer) {
+    notifyChannel(streamer, liveData) {
         const channelId = this.getChannelId();
         if (!channelId) return;
         const channel = this.client.channels.cache.get(channelId);
@@ -138,19 +141,30 @@ class StreamerWatcher {
                 ? `https://twitch.tv/${streamer.name}`
                 : `https://kick.com/${streamer.name}`;
 
-            // Para Twitch, tente buscar a thumbnail
-            let embed = null;
+            let embed;
             if (streamer.type === 'twitch') {
-                const thumb = `https://static-cdn.jtvnw.net/previews-ttv/live_user_${streamer.name.toLowerCase()}.jpg?width=640&height=360`;
+                const thumb = liveData.thumbnail_url.replace('{width}', '640').replace('{height}', '360');
                 embed = {
-                    title: `Twitch: ${streamer.name}`,
+                    title: liveData.title,
                     url: url,
-                    image: { url: thumb }
+                    image: { url: thumb },
+                    author: {
+                        name: `${streamer.name} - Twitch`,
+                        icon_url: 'https://static.twitchcdn.net/assets/favicon-32-e29e246c157142c94346.png'
+                    },
+                    color: 0x6441a5 // Twitch Purple
                 };
-            } else {
+            } else { // Kick
+                const thumb = liveData?.thumbnail?.url || 'https://kick.com/favicon.ico'; // fallback
                 embed = {
-                    title: `Kick: ${streamer.name}`,
-                    url: url
+                    title: liveData?.session_title || 'Live na Kick',
+                    url: url,
+                    image: { url: thumb },
+                    author: {
+                        name: `${streamer.name} - Kick`,
+                        icon_url: 'https://kick.com/favicon.ico'
+                    },
+                    color: 0x53fc18
                 };
             }
 
