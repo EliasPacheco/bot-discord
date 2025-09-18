@@ -2,9 +2,9 @@ require('dotenv').config();
 const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
-const { handleAdicionarkick } = require('./commands/adicionarkick');
-const { handleAdicionartwitch } = require('./commands/adicionartwitch');
-const StreamerWatcher = require('./services/streamerWatcher');
+const { handleAdicionarkick } = require('./src/commands/adicionarkick');
+const { handleAdicionartwitch } = require('./src/commands/adicionartwitch');
+const StreamerWatcher = require('./src/services/streamerWatcher');
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
 const PREFIX = '/';
@@ -34,7 +34,7 @@ client.on('interactionCreate', async interaction => {
         const focusedValue = interaction.options.getFocused();
         const fs = require('fs');
         const path = require('path');
-        const streamersFilePath = path.join(__dirname, './data/streamers.json');
+        const streamersFilePath = path.join(__dirname, './src/data/streamers.json');
         let data = { streamers: [] };
         if (fs.existsSync(streamersFilePath)) {
             data = JSON.parse(fs.readFileSync(streamersFilePath));
@@ -59,7 +59,7 @@ client.on('interactionCreate', async interaction => {
         const focusedValue = interaction.options.getFocused();
         const fs = require('fs');
         const path = require('path');
-        const streamersFilePath = path.join(__dirname, './data/streamers.json');
+        const streamersFilePath = path.join(__dirname, './src/data/streamers.json');
         let data = { streamers: [] };
         if (fs.existsSync(streamersFilePath)) {
             data = JSON.parse(fs.readFileSync(streamersFilePath));
@@ -90,7 +90,7 @@ client.on('interactionCreate', async interaction => {
         // Carrega e salva igual ao seu comando antigo
         const fs = require('fs');
         const path = require('path');
-        const streamersFilePath = path.join(__dirname, './data/streamers.json');
+        const streamersFilePath = path.join(__dirname, './src/data/streamers.json');
         let data = { streamers: [] };
         if (fs.existsSync(streamersFilePath)) {
             data = JSON.parse(fs.readFileSync(streamersFilePath));
@@ -107,7 +107,7 @@ client.on('interactionCreate', async interaction => {
 
         const fs = require('fs');
         const path = require('path');
-        const streamersFilePath = path.join(__dirname, './data/streamers.json');
+        const streamersFilePath = path.join(__dirname, './src/data/streamers.json');
         let data = { streamers: [] };
         if (fs.existsSync(streamersFilePath)) {
             data = JSON.parse(fs.readFileSync(streamersFilePath));
@@ -170,7 +170,7 @@ client.on('interactionCreate', async interaction => {
             await interaction.reply({ content: 'Escolha um canal de texto válido!', ephemeral: true });
             return;
         }
-        const notificacaoPath = path.join(__dirname, './data/notificacao.json');
+        const notificacaoPath = path.join(__dirname, './src/data/notificacao.json');
         fs.writeFileSync(notificacaoPath, JSON.stringify({ canalId: canal.id }, null, 2));
         await interaction.reply(`Canal de notificações definido para <#${canal.id}>!`);
     }
