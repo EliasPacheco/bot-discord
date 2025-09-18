@@ -21,6 +21,7 @@ build/
 Thumbs.db
 
 # Ambiente
+.env
 .env.local
 .env.*.local
 
