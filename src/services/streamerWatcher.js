@@ -20,12 +20,15 @@ class StreamerWatcher {
         this.streamers = data.streamers || [];
     }
 
-    getChannelId() {
+    getChannelIds() {
         if (fs.existsSync(this.notificacaoPath)) {
             const data = JSON.parse(fs.readFileSync(this.notificacaoPath));
-            return data.canalId;
+            // Suporta novos e antigos formatos: { canais: [] } | { canalIds: [] } | { canalId: "..." }
+            if (Array.isArray(data.canais)) return data.canais;
+            if (Array.isArray(data.canalIds)) return data.canalIds;
+            if (data.canalId) return [data.canalId];
         }
-        return null;
+        return [];
     }
 
     async checkStreamers() {
@@ -42,15 +45,69 @@ class StreamerWatcher {
                 // Só notificar se ainda não foi notificado
                 if (!this.notifiedStreams.has(streamKey)) {
                     console.log(`[INFO] ${streamer.name} entrou ao vivo! Enviando notificação...`);
-                    this.notifyChannel(streamer, liveData);
+                    await this.notifyChannel(streamer, liveData);
+                    await this.updateLiveRole(streamer.name, true); // Adicionar cargo ao vivo
                     this.notifiedStreams.add(streamKey);
                 }
             } else {
                 // Se estava ao vivo e agora está offline, remover da lista de notificados
                 if (this.notifiedStreams.has(streamKey)) {
                     console.log(`[INFO] ${streamer.name} saiu do ar.`);
+                    await this.updateLiveRole(streamer.name, false); // Remover cargo ao vivo
                     this.notifiedStreams.delete(streamKey);
                 }
+            }
+        }
+    }
+
+    async updateLiveRole(streamerName, isLive) {
+        // Carrega as configurações dos servidores
+        const configPath = path.join(__dirname, '../data/server_config.json');
+        let config = { servers: {} };
+        
+        if (fs.existsSync(configPath)) {
+            config = JSON.parse(fs.readFileSync(configPath));
+        }
+
+        // Itera sobre todos os servidores que o bot está presente
+        for (const [guildId, guild] of this.client.guilds.cache) {
+            // Verifica se há configuração para este servidor
+            if (!config.servers[guildId] || !config.servers[guildId].liveRoles) {
+                continue; // Pula se não houver configuração para este servidor
+            }
+
+            try {
+                // Encontra o membro que corresponde ao streamer
+                const members = guild.members.cache.filter(member => 
+                    member.displayName.toLowerCase().includes(streamerName.toLowerCase()) || 
+                    member.user.username.toLowerCase().includes(streamerName.toLowerCase())
+                );
+
+                for (const [, member] of members) {
+                    // Verifica se há um cargo configurado para este usuário
+                    const roleId = config.servers[guildId].liveRoles[member.id];
+                    if (!roleId) {
+                        continue; // Pula se não houver cargo configurado para este usuário
+                    }
+
+                    const role = guild.roles.cache.get(roleId);
+                    if (!role) {
+                        console.log(`[ERRO] Cargo com ID ${roleId} não encontrado no servidor ${guild.name}`);
+                        continue;
+                    }
+
+                    if (isLive) {
+                        // Adiciona o cargo se estiver ao vivo
+                        await member.roles.add(role);
+                        console.log(`[INFO] Cargo ${role.name} adicionado para ${member.user.tag} no servidor ${guild.name}`);
+                    } else {
+                        // Remove o cargo se estiver offline
+                        await member.roles.remove(role);
+                        console.log(`[INFO] Cargo ${role.name} removido de ${member.user.tag} no servidor ${guild.name}`);
+                    }
+                }
+            } catch (error) {
+                console.log(`[ERRO] Erro ao atualizar cargos no servidor ${guild.name}: ${error.message}`);
             }
         }
     }
@@ -129,56 +186,63 @@ class StreamerWatcher {
         }
     }
 
+    async notifyChannel(streamer, liveData) {
+        const channelIds = this.getChannelIds();
+        if (channelIds.length === 0) return;
 
+        let url = streamer.type === 'twitch'
+            ? `https://twitch.tv/${streamer.name}`
+            : `https://kick.com/${streamer.name}`;
 
-    // Adapte seu método notifyChannel:
-    notifyChannel(streamer, liveData) {
-        const channelId = this.getChannelId();
-        if (!channelId) return;
-        const channel = this.client.channels.cache.get(channelId);
-        if (channel) {
-            let url = streamer.type === 'twitch'
-                ? `https://twitch.tv/${streamer.name}`
-                : `https://kick.com/${streamer.name}`;
+        let embed;
+        if (streamer.type === 'twitch') {
+            const thumb = liveData.thumbnail_url.replace('{width}', '640').replace('{height}', '360');
+            embed = {
+                title: liveData.title,
+                url: url,
+                image: { url: thumb },
+                author: {
+                    name: `${streamer.name} - Twitch`,
+                    icon_url: 'https://static.twitchcdn.net/assets/favicon-32-e29e246c157142c94346.png'
+                },
+                color: 0x6441a5 // Twitch Purple
+            };
+        } else { // Kick
+            const thumb = liveData?.thumbnail?.url || 'https://kick.com/favicon.ico'; // fallback
+            embed = {
+                title: liveData?.session_title || 'Live na Kick',
+                url: url,
+                image: { url: thumb },
+                author: {
+                    name: `${streamer.name} - Kick`,
+                    icon_url: 'https://kick.com/favicon.ico'
+                },
+                color: 0x53fc18
+            };
+        }
 
-            let embed;
-            if (streamer.type === 'twitch') {
-                const thumb = liveData.thumbnail_url.replace('{width}', '640').replace('{height}', '360');
-                embed = {
-                    title: liveData.title,
-                    url: url,
-                    image: { url: thumb },
-                    author: {
-                        name: `${streamer.name} - Twitch`,
-                        icon_url: 'https://static.twitchcdn.net/assets/favicon-32-e29e246c157142c94346.png'
-                    },
-                    color: 0x6441a5 // Twitch Purple
-                };
-            } else { // Kick
-                const thumb = liveData?.thumbnail?.url || 'https://kick.com/favicon.ico'; // fallback
-                embed = {
-                    title: liveData?.session_title || 'Live na Kick',
-                    url: url,
-                    image: { url: thumb },
-                    author: {
-                        name: `${streamer.name} - Kick`,
-                        icon_url: 'https://kick.com/favicon.ico'
-                    },
-                    color: 0x53fc18
-                };
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setLabel('Acessar')
+                .setStyle(ButtonStyle.Link)
+                .setURL(url)
+        );
+
+        // Envia notificação para todos os canais configurados
+        for (const channelId of channelIds) {
+            try {
+                const channel = this.client.channels.cache.get(channelId);
+                if (channel) {
+                    await channel.send({
+                        content: `O ${streamer.name} está ao vivo! @everyone`,
+                        embeds: [embed],
+                        components: [row]
+                    });
+                    console.log(`[INFO] Notificação enviada para o canal ${channelId}`);
+                }
+            } catch (error) {
+                console.log(`[ERRO] Erro ao enviar notificação para o canal ${channelId}: ${error.message}`);
             }
-
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setLabel('Acessar')
-                    .setStyle(ButtonStyle.Link)
-                    .setURL(url)
-            );
-            channel.send({
-                content: `O ${streamer.name} está ao vivo! @everyone`,
-                embeds: [embed],
-                components: [row]
-            });
         }
     }
 

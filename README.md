@@ -7,6 +7,7 @@ This project is a Discord bot that allows users to add Twitch streamers and kick
 - Add Twitch streamers using the command `/adicionartwitch <streamer_name_or_url>`.
 - Add Kick streamers using the command `/adicionarkick <streamer_name>`.
 - Automatically checks the status of the added streamers and notifies the channel when they go live.
+- Configure roles per server for each Discord user using `/escolhercargo <cargo> <usuario>` - the bot will automatically assign/remove the role when the user goes live/offline.
 
 ## Project Structure
 

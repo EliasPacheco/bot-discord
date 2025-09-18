@@ -61,6 +61,28 @@ const commands = [
                 .setDescription('Canal de texto para notificações')
                 .setRequired(true)
     ),
+    new SlashCommandBuilder()
+        .setName('removercanal')
+        .setDescription('Remover um canal da lista de notificações de live')
+        .addStringOption(option =>
+            option.setName('canal')
+                .setDescription('Escolha um canal já cadastrado (autocompletar)')
+                .setRequired(true)
+                .setAutocomplete(true)
+        ),
+    new SlashCommandBuilder()
+        .setName('escolhercargo')
+        .setDescription('Escolher cargo para ser atribuído quando o usuário estiver ao vivo')
+        .addRoleOption(option =>
+            option.setName('cargo')
+                .setDescription('Cargo que será dado quando estiver ao vivo')
+                .setRequired(true)
+        )
+        .addUserOption(option =>
+            option.setName('usuario')
+                .setDescription('Usuário do Discord que receberá o cargo')
+                .setRequired(true)
+        ),
 ]
     .map(command => command.toJSON());
 
