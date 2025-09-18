@@ -77,17 +77,19 @@ class StreamerWatcher {
             }
 
             try {
-                // Encontra o membro que corresponde ao streamer
-                const members = guild.members.cache.filter(member => 
-                    member.displayName.toLowerCase().includes(streamerName.toLowerCase()) || 
-                    member.user.username.toLowerCase().includes(streamerName.toLowerCase())
-                );
+                // Itera sobre todos os usuários configurados no servidor
+                for (const [userId, roleId] of Object.entries(config.servers[guildId].liveRoles)) {
+                    // Busca o membro pelo ID
+                    const member = await guild.members.fetch(userId).catch(() => null);
+                    if (!member) {
+                        console.log(`[ERRO] Usuário com ID ${userId} não encontrado no servidor ${guild.name}`);
+                        continue;
+                    }
 
-                for (const [, member] of members) {
-                    // Verifica se há um cargo configurado para este usuário
-                    const roleId = config.servers[guildId].liveRoles[member.id];
-                    if (!roleId) {
-                        continue; // Pula se não houver cargo configurado para este usuário
+                    // Verifica se o nome do streamer corresponde ao nome do usuário ou nickname
+                    if (!member.displayName.toLowerCase().includes(streamerName.toLowerCase()) && 
+                        !member.user.username.toLowerCase().includes(streamerName.toLowerCase())) {
+                        continue; // Pula se o nome não corresponder
                     }
 
                     const role = guild.roles.cache.get(roleId);
