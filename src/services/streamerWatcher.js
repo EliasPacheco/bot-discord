@@ -179,72 +179,28 @@ class StreamerWatcher {
         return null;
     }
 
-    async checkKickLive(username) {
-        try {
-            console.log(`[DEBUG] Tentando Kick API v2 para ${username}`);
-
-            const res = await fetch(
-                `https://kick.com/api/v2/channels/${username.toLowerCase()}`,
-                {
+    // --- Substituição do checkKickLive ---
+        async checkKickLive(username) {
+            try {
+                const res = await fetch(`https://kick.com/${username.toLowerCase()}`, {
                     headers: {
                         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-                        Accept: "application/json",
-                        Referer: "https://kick.com/",
+                        Accept: "text/html",
                     },
-                }
-            );
-
-            if (res.ok) {
-                const data = await res.json();
-                const isLive = data.livestream !== null && !data.is_banned;
-
+                });
+                const html = await res.text();
+                const isLive = html.includes('data-test-selector="live-badge"');
                 if (isLive) {
-                    console.log(`[LIVE] ${username} está AO VIVO no Kick (API)!`);
-                    return data.livestream;
-                } else {
-                    console.log(`[DEBUG] ${username} está offline no Kick (API)`);
-                    return null;
+                    return { 
+                        session_title: `${username} ao vivo`, 
+                        thumbnail: { url: "https://kick.com/favicon.ico" } 
+                    };
                 }
+            } catch (err) {
+                console.log(`[ERRO] Falha ao checar Kick para ${username}: ${err.message}`);
             }
-
-            console.log(`[WARNING] API v2 falhou (${res.status}), usando Puppeteer`);
-
-        } catch (err) {
-            console.log(`[WARNING] API v2 falhou para ${username}: ${err.message}, usando Puppeteer`);
-        }
-
-        // --- Fallback Puppeteer ---
-        try {
-            const browser = await puppeteer.launch({
-                args: chromium.args,
-                defaultViewport: chromium.defaultViewport,
-                executablePath: await chromium.executablePath(),
-                headless: true,
-            });
-
-            const page = await browser.newPage();
-            await page.goto(`https://kick.com/${username}`, { waitUntil: "networkidle2" });
-
-            // Extrai status da live do HTML
-            const isLive = await page.evaluate(() => {
-                const liveBadge = document.querySelector('[data-test-selector="live-badge"]');
-                return liveBadge ? true : false;
-            });
-
-            await browser.close();
-
-            if (isLive) {
-                console.log(`[LIVE] ${username} está AO VIVO no Kick (Puppeteer)!`);
-                return { session_title: username + " ao vivo" }; // fallback minimal
-            } else {
-                console.log(`[DEBUG] ${username} está offline no Kick (Puppeteer)`);
-                return null;
-            }
-        } catch (err) {
-            console.error(`[ERRO] Fallback Puppeteer falhou para ${username}: ${err.message}`);
             return null;
         }
-    }
 
     async notifyChannel(streamer, liveData) {
         const channelIds = this.getChannelIds();
