@@ -177,109 +177,137 @@ class StreamerWatcher {
         return null;
     }
 
-    async checkKickLive(username) {
-        const maxRetries = 3;
-        const retryDelay = 2000; // 2 segundos entre tentativas
-        
-        // Lista de User-Agents realistas para rotacionar
-        const userAgents = [
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0"
-        ];
+    async ensureBrowser() {
+        if (this.puppeteerBrowser && this.puppeteerBrowser.isConnected && this.puppeteerBrowser.isConnected()) {
+        return this.puppeteerBrowser;
+        }
+        const puppeteer = require('puppeteer');
+        const launchOptions = Object.assign(
+        {
+            headless: true,
+            args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--single-process',
+            ],
+        },
+        this.puppeteerLaunchOptions || {}
+        );
 
-        // Endpoints para tentar em ordem de prioridade
-        const endpoints = [
-            `https://kick.com/api/v2/channels/${username.toLowerCase()}`,
-            `https://kick.com/api/v1/channels/${username.toLowerCase()}`,
-            `https://kick.com/api/v2/channels/${username.toLowerCase()}/livestream`
-        ];
+        this.puppeteerBrowser = await puppeteer.launch(launchOptions);
+        return this.puppeteerBrowser;
+    }
 
-        for (let attempt = 0; attempt < maxRetries; attempt++) {
-            for (let endpointIndex = 0; endpointIndex < endpoints.length; endpointIndex++) {
-                try {
-                    const endpoint = endpoints[endpointIndex];
-                    const userAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
-                    
-                    console.log(`[DEBUG] Tentativa ${attempt + 1}/${maxRetries} - Verificando Kick para ${username} via ${endpoint.includes('v2') ? 'API v2' : endpoint.includes('v1') ? 'API v1' : 'API livestream'}`);
+    async closeBrowser() {
+        if (this.puppeteerBrowser) {
+        try {
+            await this.puppeteerBrowser.close();
+        } catch (e) {}
+        this.puppeteerBrowser = null;
+        }
+    }
 
-                    const headers = {
-                        "User-Agent": userAgent,
-                        "Accept": "application/json, text/plain, */*",
-                        "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
-                        "Accept-Encoding": "gzip, deflate, br",
-                        "Referer": "https://kick.com/",
-                        "Origin": "https://kick.com",
-                        "DNT": "1",
-                        "Connection": "keep-alive",
-                        "Sec-Fetch-Dest": "empty",
-                        "Sec-Fetch-Mode": "cors",
-                        "Sec-Fetch-Site": "same-origin",
-                        "Cache-Control": "no-cache",
-                        "Pragma": "no-cache"
-                    };
+        async checkKickLive(username) {
+            // tenta a rota /livestream primeiro via fetch (mais leve)
+            try {
+                const apiUrl = `https://kick.com/api/v2/channels/${username.toLowerCase()}/livestream`;
+                console.log(`[DEBUG] Tentando endpoint direto: ${apiUrl}`);
+                const res = await fetch(apiUrl, {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                        Accept: 'application/json, text/plain, */*'
+                    },
+                    method: 'GET',
+                });
 
-                    const res = await fetch(endpoint, {
-                        headers: headers,
-                        method: "GET",
-                        timeout: 10000 // 10 segundos de timeout
-                    });
-
-                    if (res.ok) {
-                        const data = await res.json();
-                        
-                        // Log dos dados recebidos
-                        console.log(
-                            `[DEBUG] Dados do canal ${username}:`,
-                            JSON.stringify({
-                                id: data.id,
-                                slug: data.slug,
-                                is_banned: data.is_banned,
-                                livestream: data.livestream ? "presente" : "ausente",
-                            }),
-                        );
-
-                        // Verifica se o streamer está realmente ao vivo
-                        const isLive = data.livestream !== null && !data.is_banned;
-
-                        if (isLive) {
-                            console.log(`[LIVE] ${username} está AO VIVO no Kick!`);
-                            return data.livestream;
-                        } else {
-                            console.log(`[DEBUG] ${username} está offline no Kick`);
-                            return null;
-                        }
-                    } else {
-                        console.log(`[WARNING] Endpoint ${endpoint} retornou status ${res.status} para ${username}`);
-                        
-                        // Se for 403, tenta o próximo endpoint imediatamente
-                        if (res.status === 403) {
-                            continue;
-                        }
-                        
-                        // Para outros erros, aguarda antes de tentar novamente
-                        if (attempt < maxRetries - 1) {
-                            console.log(`[DEBUG] Aguardando ${retryDelay}ms antes da próxima tentativa...`);
-                            await new Promise(resolve => setTimeout(resolve, retryDelay));
-                        }
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && (data.session_title || data.stream_id || data.id)) {
+                        console.log(`[LIVE - API] ${username} AO VIVO (via /livestream)`);
+                        return data;
                     }
+                    // se for 200 mas null, considera offline
+                    return null;
+                }
+
+                console.log(`[DEBUG] endpoint /livestream retornou status ${res.status} para ${username}`);
+            } catch (err) {
+                console.log(`[DEBUG] erro ao tentar /livestream: ${err.message}`);
+            }
+
+            // Se a API bloqueou (403 etc.), usa Puppeteer para abrir a página (simula navegador)
+            try {
+                const browser = await this.ensureBrowser();
+                const page = await browser.newPage();
+
+                // Header e viewport realistas
+                await page.setUserAgent(
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                );
+                await page.setExtraHTTPHeaders({
+                    'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8'
+                });
+                await page.setViewport({ width: 1280, height: 800 });
+
+                const url = `https://kick.com/${username.toLowerCase()}`;
+                console.log(`[DEBUG] Abrindo página Kick: ${url}`);
+
+                try {
+                    await page.setCacheEnabled(false);
+                    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
                 } catch (err) {
-                    console.error(`[ERRO] Falha na tentativa ${attempt + 1} para ${username}:`, err.message);
-                    
-                    // Se não for a última tentativa, aguarda antes de tentar novamente
-                    if (attempt < maxRetries - 1) {
-                        console.log(`[DEBUG] Aguardando ${retryDelay}ms antes da próxima tentativa...`);
-                        await new Promise(resolve => setTimeout(resolve, retryDelay));
+                    console.log(`[DEBUG] page.goto falhou para ${username}: ${err.message}`);
+                }
+
+                // Tenta extrair o JSON do __NEXT_DATA__
+                const nextDataHandle = await page.$('#__NEXT_DATA__');
+                if (nextDataHandle) {
+                    const raw = await page.evaluate(el => el.textContent, nextDataHandle);
+                    try {
+                        const json = JSON.parse(raw);
+                        const livestream = json?.props?.pageProps?.channel?.livestream;
+                        if (livestream) {
+                            console.log(`[LIVE - Puppeteer] ${username} AO VIVO (extraído de __NEXT_DATA__)`);
+                            await page.close();
+                            return livestream;
+                        } else {
+                            console.log(`[DEBUG] __NEXT_DATA__ encontrado mas livestream é nulo`);
+                        }
+                    } catch (e) {
+                        console.log(`[DEBUG] falha ao parsear __NEXT_DATA__: ${e.message}`);
                     }
                 }
+
+                // fallback: tentar capturar livestream no HTML
+                const html = await page.content();
+                const match = html.match(/"livestream":\s*(\{.*?\}|null)\s*,/s);
+                if (match) {
+                    try {
+                        const objText = match[1];
+                        if (objText !== 'null') {
+                            const obj = JSON.parse(objText);
+                            console.log(`[LIVE - Puppeteer/HTML] ${username} AO VIVO (extraído do HTML)`);
+                            await page.close();
+                            return obj;
+                        }
+                    } catch (e) {
+                        // ignora parse errors
+                    }
+                }
+
+                await page.close();
+                console.log(`[DEBUG] ${username} parece OFFLINE (página aberta, sem livestream detectado)`);
+                return null;
+
+            } catch (err) {
+                console.error(`[ERRO] Puppeteer falhou para ${username}: ${err.message}`);
+                // fecha o browser pra forçar recriação na próxima vez
+                await this.closeBrowser();
+                return null;
             }
         }
-
-        console.error(`[ERRO] Todas as tentativas falharam para verificar ${username} no Kick`);
-        return null;
-    }
 
     async notifyChannel(streamer, liveData) {
         const channelIds = this.getChannelIds();
