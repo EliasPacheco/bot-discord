@@ -72,44 +72,48 @@ class StreamerWatcher {
         // Itera sobre todos os servidores que o bot está presente
         for (const [guildId, guild] of this.client.guilds.cache) {
             // Verifica se há configuração para este servidor
-            if (!config.servers[guildId] || !config.servers[guildId].liveRoles) {
+            if (!config.servers[guildId] || !config.servers[guildId].streamerRoles) {
                 continue; // Pula se não houver configuração para este servidor
             }
 
+            // Verifica se há configuração para este streamer específico
+            if (!config.servers[guildId].streamerRoles[streamerName]) {
+                continue; // Pula se não houver configuração para este streamer
+            }
+
             try {
-                // Itera sobre todos os usuários configurados no servidor
-                for (const [userId, roleId] of Object.entries(config.servers[guildId].liveRoles)) {
-                    // Busca o membro pelo ID
-                    const member = await guild.members.fetch(userId).catch(() => null);
-                    if (!member) {
-                        console.log(`[ERRO] Usuário com ID ${userId} não encontrado no servidor ${guild.name}`);
-                        continue;
-                    }
+                const streamerConfig = config.servers[guildId].streamerRoles[streamerName];
+                const userId = streamerConfig.userId;
+                const roleId = streamerConfig.roleId;
 
-                    // Verifica se o nome do streamer corresponde ao nome do usuário ou nickname
-                    if (!member.displayName.toLowerCase().includes(streamerName.toLowerCase()) && 
-                        !member.user.username.toLowerCase().includes(streamerName.toLowerCase())) {
-                        continue; // Pula se o nome não corresponder
-                    }
+                // Busca o membro pelo ID
+                const member = await guild.members.fetch(userId).catch(() => null);
+                if (!member) {
+                    console.log(`[ERRO] Usuário com ID ${userId} não encontrado no servidor ${guild.name}`);
+                    continue;
+                }
 
-                    const role = guild.roles.cache.get(roleId);
-                    if (!role) {
-                        console.log(`[ERRO] Cargo com ID ${roleId} não encontrado no servidor ${guild.name}`);
-                        continue;
-                    }
+                const role = guild.roles.cache.get(roleId);
+                if (!role) {
+                    console.log(`[ERRO] Cargo com ID ${roleId} não encontrado no servidor ${guild.name}`);
+                    continue;
+                }
 
-                    if (isLive) {
-                        // Adiciona o cargo se estiver ao vivo
+                if (isLive) {
+                    // Adiciona o cargo se estiver ao vivo
+                    if (!member.roles.cache.has(roleId)) {
                         await member.roles.add(role);
-                        console.log(`[INFO] Cargo ${role.name} adicionado para ${member.user.tag} no servidor ${guild.name}`);
-                    } else {
-                        // Remove o cargo se estiver offline
+                        console.log(`[INFO] Cargo ${role.name} adicionado para ${member.user.tag} no servidor ${guild.name} (streamer: ${streamerName})`);
+                    }
+                } else {
+                    // Remove o cargo se estiver offline
+                    if (member.roles.cache.has(roleId)) {
                         await member.roles.remove(role);
-                        console.log(`[INFO] Cargo ${role.name} removido de ${member.user.tag} no servidor ${guild.name}`);
+                        console.log(`[INFO] Cargo ${role.name} removido de ${member.user.tag} no servidor ${guild.name} (streamer: ${streamerName})`);
                     }
                 }
             } catch (error) {
-                console.log(`[ERRO] Erro ao atualizar cargos no servidor ${guild.name}: ${error.message}`);
+                console.log(`[ERRO] Erro ao atualizar cargo no servidor ${guild.name}: ${error.message}`);
             }
         }
     }

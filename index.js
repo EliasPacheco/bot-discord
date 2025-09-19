@@ -94,42 +94,36 @@ client.on("interactionCreate", async (interaction) => {
     const { commandName, options } = interaction;
     
     if (commandName === "escolhercargo") {
+        const streamerName = options.getString("streamer");
         const cargo = options.getRole("cargo");
         const usuario = options.getUser("usuario");
         const serverId = interaction.guildId;
 
-        // Carrega as configurações do servidor
-        const fs = require("fs");
-        const path = require("path");
         const configPath = path.join(__dirname, "./src/data/server_config.json");
         let config = { servers: {} };
-        
+
         if (fs.existsSync(configPath)) {
-            config = JSON.parse(fs.readFileSync(configPath));
+            try {
+                config = JSON.parse(fs.readFileSync(configPath));
+            } catch {
+                config = { servers: {} };
+            }
         }
 
-        // Inicializa a configuração do servidor se não existir
         if (!config.servers[serverId]) {
-            config.servers[serverId] = {
-                liveRoles: {}
-            };
+            config.servers[serverId] = { streamerRoles: {} };
         }
 
-        // Inicializa a estrutura de cargos ao vivo se não existir
-        if (!config.servers[serverId].liveRoles) {
-            config.servers[serverId].liveRoles = {};
-        }
+        config.servers[serverId].streamerRoles[streamerName] = {
+            userId: usuario.id,
+            roleId: cargo.id
+        };
 
-        // Configura o cargo para o usuário
-        config.servers[serverId].liveRoles[usuario.id] = cargo.id;
-
-        // Salva as configurações
         fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 
         await interaction.reply(
-            `Cargo ${cargo.name} configurado para ser atribuído ao usuário ${usuario.tag} quando estiver ao vivo neste servidor!`
+            `✅ Cargo ${cargo.name} configurado para ${usuario.tag} quando o streamer **${streamerName}** estiver ao vivo!`
         );
-        return;
     }
 
     if (commandName === "adicionar") {

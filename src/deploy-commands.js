@@ -72,7 +72,13 @@ const commands = [
         ),
     new SlashCommandBuilder()
         .setName('escolhercargo')
-        .setDescription('Escolher cargo para ser atribuído quando o usuário estiver ao vivo')
+        .setDescription('Escolher cargo para ser atribuído quando o streamer estiver ao vivo')
+        .addStringOption(option =>
+            option.setName('streamer')
+                .setDescription('Nome do streamer (precisa já estar no /adicionar)')
+                .setRequired(true)
+                .setAutocomplete(true)
+        )
         .addRoleOption(option =>
             option.setName('cargo')
                 .setDescription('Cargo que será dado quando estiver ao vivo')
