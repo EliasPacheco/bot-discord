@@ -13,139 +13,235 @@ class StreamerWatcher {
         this.notificacaoPath = path.join(__dirname, "../data/notificacao.json");
         this.notifiedStreams = new Set();
         this.kickBrowser = null;
+        this.browserRetries = 0;
+        this.maxRetries = 3;
     }
 
     // Inicializa o browser do Kick
     async initKickBrowser() {
         if (!this.kickBrowser) {
-            this.kickBrowser = await puppeteer.launch({
-                headless: true,
-                args: [
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-gpu',
-                    '--single-process',
-                    '--no-zygote',
-                    '--disable-background-networking',
-                    '--disable-default-apps',
-                    '--disable-extensions',
-                    '--disable-sync',
-                    '--metrics-recording-only',
-                    '--no-first-run',
-                ],
-            });
-            console.log("[INFO] Puppeteer (Kick) iniciado!");
+            try {
+                this.kickBrowser = await puppeteer.launch({
+                    headless: "new",
+                    args: [
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-dev-shm-usage',
+                        '--disable-gpu',
+                        '--no-zygote',
+                        '--single-process',
+                        '--disable-background-networking',
+                        '--disable-default-apps',
+                        '--disable-extensions',
+                        '--disable-sync',
+                        '--disable-translate',
+                        '--hide-scrollbars',
+                        '--metrics-recording-only',
+                        '--mute-audio',
+                        '--no-first-run',
+                        '--safebrowsing-disable-auto-update',
+                    ],
+                    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || null,
+                    ignoreHTTPSErrors: true,
+                    timeout: 30000,
+                });
+                console.log("[INFO] Puppeteer (Kick) iniciado!");
+                this.browserRetries = 0;
+            } catch (error) {
+                console.error("[ERRO] Falha ao iniciar Puppeteer:", error.message);
+                this.browserRetries++;
+                if (this.browserRetries >= this.maxRetries) {
+                    console.error("[ERRO] Número máximo de tentativas de inicialização do browser atingido");
+                    throw error;
+                }
+                await new Promise(resolve => setTimeout(resolve, 5000));
+                return this.initKickBrowser();
+            }
         }
     }
 
     // Checa se o streamer Kick está ao vivo
     async checkKickLive(username) {
-        await this.initKickBrowser();
+        if (!this.kickBrowser) {
+            try {
+                await this.initKickBrowser();
+            } catch (error) {
+                console.error("[ERRO] Não foi possível inicializar o browser:", error.message);
+                return null;
+            }
+        }
+
         let page;
         try {
             page = await this.kickBrowser.newPage();
-            await page.goto(`https://kick.com/${username}`, { waitUntil: "networkidle2", timeout: 30000 });
+            await page.setDefaultNavigationTimeout(30000);
+            await page.setRequestInterception(true);
+            
+            // Otimiza o carregamento bloqueando recursos desnecessários
+            page.on('request', (request) => {
+                const resourceType = request.resourceType();
+                if (['image', 'stylesheet', 'font', 'media'].includes(resourceType)) {
+                    request.abort();
+                } else {
+                    request.continue();
+                }
+            });
 
-            const isLive = (await page.$('[data-test-selector="live-badge"]')) !== null;
+            await page.goto(`https://kick.com/${username}`, { 
+                waitUntil: ["domcontentloaded", "networkidle2"],
+                timeout: 30000 
+            });
 
-            return isLive
-                ? { session_title: `${username} ao vivo`, thumbnail: { url: "https://kick.com/favicon.ico" } }
-                : null;
+            const isLive = await page.evaluate(() => {
+                const liveBadge = document.querySelector('[data-test-selector="live-badge"]');
+                return liveBadge !== null;
+            });
+
+            if (isLive) {
+                return {
+                    session_title: `${username} ao vivo`,
+                    thumbnail: { url: "https://kick.com/favicon.ico" }
+                };
+            }
+            return null;
+
         } catch (err) {
-            console.log(`[ERRO] Falha ao checar Kick para ${username}: ${err.message}`);
+            console.error(`[ERRO] Falha ao checar Kick para ${username}:`, err.message);
+            
+            // Se o erro for relacionado ao browser, tenta reiniciar
+            if (err.message.includes('browser') || err.message.includes('target closed')) {
+                await this.closeKickBrowser();
+                this.kickBrowser = null;
+            }
+            
             return null;
         } finally {
-            if (page) await page.close().catch(() => {});
+            if (page) {
+                try {
+                    await page.close();
+                } catch (err) {
+                    console.error("[ERRO] Falha ao fechar página:", err.message);
+                }
+            }
         }
     }
 
     // Fecha o browser do Kick
     async closeKickBrowser() {
         if (this.kickBrowser) {
-            await this.kickBrowser.close().catch(() => {});
-            this.kickBrowser = null;
-            console.log("[INFO] Puppeteer (Kick) fechado!");
+            try {
+                await this.kickBrowser.close();
+                this.kickBrowser = null;
+                console.log("[INFO] Puppeteer (Kick) fechado!");
+            } catch (error) {
+                console.error("[ERRO] Falha ao fechar browser:", error.message);
+                this.kickBrowser = null;
+            }
         }
     }
 
     // Carrega a lista de streamers
     async loadStreamers() {
-        const data = require("../data/streamers.json");
-        this.streamers = data.streamers || [];
+        try {
+            const data = require("../data/streamers.json");
+            this.streamers = data.streamers || [];
+        } catch (error) {
+            console.error("[ERRO] Falha ao carregar lista de streamers:", error.message);
+            this.streamers = [];
+        }
     }
 
     // Retorna os canais que receberão notificação
     getChannelIds() {
-        if (fs.existsSync(this.notificacaoPath)) {
-            const data = JSON.parse(fs.readFileSync(this.notificacaoPath));
-            if (Array.isArray(data.canais)) return data.canais;
-            if (Array.isArray(data.canalIds)) return data.canalIds;
-            if (data.canalId) return [data.canalId];
+        try {
+            if (fs.existsSync(this.notificacaoPath)) {
+                const data = JSON.parse(fs.readFileSync(this.notificacaoPath));
+                if (Array.isArray(data.canais)) return data.canais;
+                if (Array.isArray(data.canalIds)) return data.canalIds;
+                if (data.canalId) return [data.canalId];
+            }
+        } catch (error) {
+            console.error("[ERRO] Falha ao ler canais de notificação:", error.message);
         }
         return [];
     }
 
     // Checa todos os streamers
     async checkStreamers() {
-        await this.loadStreamers();
+        try {
+            await this.loadStreamers();
 
-        for (const streamer of this.streamers) {
-            const streamKey = `${streamer.type}:${streamer.name}`;
-            console.log(`[DEBUG] Checando streamer: ${streamer.name} (${streamer.type})`);
+            for (const streamer of this.streamers) {
+                const streamKey = `${streamer.type}:${streamer.name}`;
+                console.log(`[DEBUG] Checando streamer: ${streamer.name} (${streamer.type})`);
 
-            const liveData = await this.checkIfLive(streamer);
-            console.log(`[DEBUG] Status de ${streamer.name}: ${liveData ? "AO VIVO" : "offline"}`);
+                try {
+                    const liveData = await this.checkIfLive(streamer);
+                    console.log(`[DEBUG] Status de ${streamer.name}: ${liveData ? "AO VIVO" : "offline"}`);
 
-            if (liveData) {
-                if (!this.notifiedStreams.has(streamKey)) {
-                    console.log(`[INFO] ${streamer.name} entrou ao vivo! Enviando notificação...`);
-                    await this.notifyChannel(streamer, liveData);
-                    await this.updateLiveRole(streamer.name, true);
-                    this.notifiedStreams.add(streamKey);
-                }
-            } else {
-                if (this.notifiedStreams.has(streamKey)) {
-                    console.log(`[INFO] ${streamer.name} saiu do ar.`);
-                    await this.updateLiveRole(streamer.name, false);
-                    this.notifiedStreams.delete(streamKey);
+                    if (liveData) {
+                        if (!this.notifiedStreams.has(streamKey)) {
+                            console.log(`[INFO] ${streamer.name} entrou ao vivo! Enviando notificação...`);
+                            await this.notifyChannel(streamer, liveData);
+                            await this.updateLiveRole(streamer.name, true);
+                            this.notifiedStreams.add(streamKey);
+                        }
+                    } else {
+                        if (this.notifiedStreams.has(streamKey)) {
+                            console.log(`[INFO] ${streamer.name} saiu do ar.`);
+                            await this.updateLiveRole(streamer.name, false);
+                            this.notifiedStreams.delete(streamKey);
+                        }
+                    }
+                } catch (error) {
+                    console.error(`[ERRO] Falha ao processar streamer ${streamer.name}:`, error.message);
                 }
             }
+        } catch (error) {
+            console.error("[ERRO] Falha ao verificar streamers:", error.message);
         }
     }
 
     async checkIfLive(streamer) {
-        if (streamer.type === "twitch") {
-            return this.checkTwitchLive(streamer.name);
-        } else if (streamer.type === "kick") {
-            return this.checkKickLive(streamer.name);
+        try {
+            if (streamer.type === "twitch") {
+                return await this.checkTwitchLive(streamer.name);
+            } else if (streamer.type === "kick") {
+                return await this.checkKickLive(streamer.name);
+            }
+        } catch (error) {
+            console.error(`[ERRO] Falha ao verificar status de ${streamer.name}:`, error.message);
         }
         return null;
     }
 
     async checkTwitchLive(username) {
-        if (!this.twitchToken || this.twitchTokenExpires < Date.now()) {
+        try {
+            if (!this.twitchToken || this.twitchTokenExpires < Date.now()) {
+                const res = await fetch(
+                    `https://id.twitch.tv/oauth2/token?client_id=${process.env.TWITCH_CLIENT_ID}&client_secret=${process.env.TWITCH_CLIENT_SECRET}&grant_type=client_credentials`,
+                    { method: "POST" }
+                );
+                const data = await res.json();
+                this.twitchToken = data.access_token;
+                this.twitchTokenExpires = Date.now() + data.expires_in * 1000;
+            }
+
             const res = await fetch(
-                `https://id.twitch.tv/oauth2/token?client_id=${process.env.TWITCH_CLIENT_ID}&client_secret=${process.env.TWITCH_CLIENT_SECRET}&grant_type=client_credentials`,
-                { method: "POST" },
+                `https://api.twitch.tv/helix/streams?user_login=${username}`,
+                {
+                    headers: {
+                        "Client-ID": process.env.TWITCH_CLIENT_ID,
+                        Authorization: `Bearer ${this.twitchToken}`,
+                    },
+                }
             );
             const data = await res.json();
-            this.twitchToken = data.access_token;
-            this.twitchTokenExpires = Date.now() + data.expires_in * 1000;
-        }
-
-        const res = await fetch(
-            `https://api.twitch.tv/helix/streams?user_login=${username}`,
-            {
-                headers: {
-                    "Client-ID": process.env.TWITCH_CLIENT_ID,
-                    Authorization: `Bearer ${this.twitchToken}`,
-                },
-            },
-        );
-        const data = await res.json();
-        if (data.data && data.data.length > 0 && data.data[0].type === "live") {
-            return data.data[0];
+            if (data.data && data.data.length > 0 && data.data[0].type === "live") {
+                return data.data[0];
+            }
+        } catch (error) {
+            console.error(`[ERRO] Falha ao verificar Twitch para ${username}:`, error.message);
         }
         return null;
     }
@@ -186,7 +282,7 @@ class StreamerWatcher {
         }
 
         const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setLabel("Acessar").setStyle(ButtonStyle.Link).setURL(url),
+            new ButtonBuilder().setLabel("Acessar").setStyle(ButtonStyle.Link).setURL(url)
         );
 
         for (const channelId of channelIds) {
@@ -201,41 +297,54 @@ class StreamerWatcher {
                     console.log(`[INFO] Notificação enviada para o canal ${channelId}`);
                 }
             } catch (error) {
-                console.log(`[ERRO] Erro ao enviar notificação para o canal ${channelId}: ${error.message}`);
+                console.error(`[ERRO] Erro ao enviar notificação para o canal ${channelId}:`, error.message);
             }
         }
     }
 
     async updateLiveRole(streamerName, isLive) {
-        const configPath = path.join(__dirname, "../data/server_config.json");
-        let config = { servers: {} };
-        if (fs.existsSync(configPath)) config = JSON.parse(fs.readFileSync(configPath));
-
-        for (const [guildId, guild] of this.client.guilds.cache) {
-            if (!config.servers[guildId]?.streamerRoles?.[streamerName]) continue;
-
-            try {
-                const { userId, roleId } = config.servers[guildId].streamerRoles[streamerName];
-                const member = await guild.members.fetch(userId).catch(() => null);
-                if (!member) continue;
-
-                const role = guild.roles.cache.get(roleId);
-                if (!role) continue;
-
-                if (isLive) {
-                    if (!member.roles.cache.has(roleId)) await member.roles.add(role);
-                } else {
-                    if (member.roles.cache.has(roleId)) await member.roles.remove(role);
-                }
-            } catch (error) {
-                console.log(`[ERRO] Erro ao atualizar cargo no servidor ${guild.name}: ${error.message}`);
+        try {
+            const configPath = path.join(__dirname, "../data/server_config.json");
+            let config = { servers: {} };
+            if (fs.existsSync(configPath)) {
+                config = JSON.parse(fs.readFileSync(configPath));
             }
+
+            for (const [guildId, guild] of this.client.guilds.cache) {
+                if (!config.servers[guildId]?.streamerRoles?.[streamerName]) continue;
+
+                try {
+                    const { userId, roleId } = config.servers[guildId].streamerRoles[streamerName];
+                    const member = await guild.members.fetch(userId).catch(() => null);
+                    if (!member) continue;
+
+                    const role = guild.roles.cache.get(roleId);
+                    if (!role) continue;
+
+                    if (isLive) {
+                        if (!member.roles.cache.has(roleId)) await member.roles.add(role);
+                    } else {
+                        if (member.roles.cache.has(roleId)) await member.roles.remove(role);
+                    }
+                } catch (error) {
+                    console.error(`[ERRO] Erro ao atualizar cargo no servidor ${guild.name}:`, error.message);
+                }
+            }
+        } catch (error) {
+            console.error("[ERRO] Falha ao atualizar roles:", error.message);
         }
     }
 
     startWatching() {
-        this.checkStreamers();
-        setInterval(() => this.checkStreamers(), this.checkInterval);
+        this.checkStreamers().catch(error => {
+            console.error("[ERRO] Falha ao iniciar verificação de streamers:", error.message);
+        });
+        
+        setInterval(() => {
+            this.checkStreamers().catch(error => {
+                console.error("[ERRO] Falha na verificação periódica de streamers:", error.message);
+            });
+        }, this.checkInterval);
     }
 }
 

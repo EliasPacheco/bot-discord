@@ -14,6 +14,10 @@ const { handleAdicionartwitch } = require("./src/commands/adicionartwitch");
 const StreamerWatcher = require("./src/services/streamerWatcher");
 const express = require('express');
 
+process.on('unhandledRejection', (reason, promise) => {
+    console.log('[WARN] Rejeição de promessa não tratada:', reason);
+});
+
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -23,7 +27,7 @@ const client = new Client({
 });
 const PREFIX = "/";
 
-client.once("clientReady", () => {
+client.once("ready", () => {
     console.log(`Logged in as ${client.user.tag}!`);
     const watcher = new StreamerWatcher(client);
     watcher.startWatching();
