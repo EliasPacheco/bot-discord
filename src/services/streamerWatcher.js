@@ -178,136 +178,107 @@ class StreamerWatcher {
     }
 
     async checkKickLive(username) {
-        try {
-            console.log(`[DEBUG] Verificando Kick para ${username}`);
+        const maxRetries = 3;
+        const retryDelay = 2000; // 2 segundos entre tentativas
+        
+        // Lista de User-Agents realistas para rotacionar
+        const userAgents = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0"
+        ];
 
-            // Headers atualizados para simular melhor um navegador real
-            const headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': '*/*',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Referer': `https://kick.com/${username}`,
-                'Origin': 'https://kick.com',
-                'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120"',
-                'sec-ch-ua-mobile': '?0',
-                'sec-ch-ua-platform': '"Windows"',
-                'sec-fetch-dest': 'empty',
-                'sec-fetch-mode': 'cors',
-                'sec-fetch-site': 'same-origin',
-                'Connection': 'keep-alive',
-                'Cache-Control': 'no-cache',
-                'Pragma': 'no-cache'
-            };
+        // Endpoints para tentar em ordem de prioridade
+        const endpoints = [
+            `https://kick.com/api/v2/channels/${username.toLowerCase()}`,
+            `https://kick.com/api/v1/channels/${username.toLowerCase()}`,
+            `https://kick.com/api/v2/channels/${username.toLowerCase()}/livestream`
+        ];
 
-            // Primeiro, tentar obter o HTML da página do canal
-            const pageRes = await fetch(`https://kick.com/${username}`, {
-                headers: {
-                    ...headers,
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-                    'sec-fetch-dest': 'document',
-                    'sec-fetch-mode': 'navigate',
-                    'sec-fetch-site': 'none',
-                    'sec-fetch-user': '?1',
-                    'upgrade-insecure-requests': '1'
-                }
-            });
-
-            if (!pageRes.ok) {
-                console.log(`[WARNING] Falha ao acessar página do canal ${username} (${pageRes.status})`);
-                return null;
-            }
-
-            // Aguardar um pouco antes de fazer a próxima requisição
-            await new Promise(resolve => setTimeout(resolve, 1000));
-
-            // Tentar diferentes endpoints
-            const endpoints = [
-                `https://kick.com/api/v2/channels/${username}`,
-                `https://kick.com/api/v1/channels/${username}`,
-                `https://kick.com/api/v1/channels/${username}/livestream`
-            ];
-
-            let data = null;
-            let error = null;
-
-            for (const endpoint of endpoints) {
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+            for (let endpointIndex = 0; endpointIndex < endpoints.length; endpointIndex++) {
                 try {
-                    console.log(`[DEBUG] Tentando endpoint: ${endpoint}`);
+                    const endpoint = endpoints[endpointIndex];
+                    const userAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
+                    
+                    console.log(`[DEBUG] Tentativa ${attempt + 1}/${maxRetries} - Verificando Kick para ${username} via ${endpoint.includes('v2') ? 'API v2' : endpoint.includes('v1') ? 'API v1' : 'API livestream'}`);
+
+                    const headers = {
+                        "User-Agent": userAgent,
+                        "Accept": "application/json, text/plain, */*",
+                        "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
+                        "Accept-Encoding": "gzip, deflate, br",
+                        "Referer": "https://kick.com/",
+                        "Origin": "https://kick.com",
+                        "DNT": "1",
+                        "Connection": "keep-alive",
+                        "Sec-Fetch-Dest": "empty",
+                        "Sec-Fetch-Mode": "cors",
+                        "Sec-Fetch-Site": "same-origin",
+                        "Cache-Control": "no-cache",
+                        "Pragma": "no-cache"
+                    };
+
                     const res = await fetch(endpoint, {
-                        headers,
-                        method: 'GET'
+                        headers: headers,
+                        method: "GET",
+                        timeout: 10000 // 10 segundos de timeout
                     });
 
                     if (res.ok) {
-                        data = await res.json();
-                        console.log(`[DEBUG] Sucesso com endpoint: ${endpoint}`);
-                        break;
+                        const data = await res.json();
+                        
+                        // Log dos dados recebidos
+                        console.log(
+                            `[DEBUG] Dados do canal ${username}:`,
+                            JSON.stringify({
+                                id: data.id,
+                                slug: data.slug,
+                                is_banned: data.is_banned,
+                                livestream: data.livestream ? "presente" : "ausente",
+                            }),
+                        );
+
+                        // Verifica se o streamer está realmente ao vivo
+                        const isLive = data.livestream !== null && !data.is_banned;
+
+                        if (isLive) {
+                            console.log(`[LIVE] ${username} está AO VIVO no Kick!`);
+                            return data.livestream;
+                        } else {
+                            console.log(`[DEBUG] ${username} está offline no Kick`);
+                            return null;
+                        }
                     } else {
-                        console.log(`[WARNING] Falha no endpoint ${endpoint} (${res.status})`);
-                        // Aguardar um pouco antes de tentar o próximo endpoint
-                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        console.log(`[WARNING] Endpoint ${endpoint} retornou status ${res.status} para ${username}`);
+                        
+                        // Se for 403, tenta o próximo endpoint imediatamente
+                        if (res.status === 403) {
+                            continue;
+                        }
+                        
+                        // Para outros erros, aguarda antes de tentar novamente
+                        if (attempt < maxRetries - 1) {
+                            console.log(`[DEBUG] Aguardando ${retryDelay}ms antes da próxima tentativa...`);
+                            await new Promise(resolve => setTimeout(resolve, retryDelay));
+                        }
                     }
                 } catch (err) {
-                    error = err;
-                    console.log(`[WARNING] Erro no endpoint ${endpoint}: ${err.message}`);
-                    continue;
-                }
-            }
-
-            if (!data) {
-                // Se todas as APIs falharem, tentar extrair informações da página HTML
-                try {
-                    const html = await pageRes.text();
-                    const isLiveMatch = html.match(/isLive":true/i);
-                    const titleMatch = html.match(/"title":"([^"]+)"/);
-                    const thumbnailMatch = html.match(/"thumbnail":{"url":"([^"]+)"/);
-
-                    if (isLiveMatch) {
-                        console.log(`[DEBUG] Canal ${username} detectado como ao vivo via HTML`);
-                        return {
-                            session_title: titleMatch ? titleMatch[1] : "Live na Kick",
-                            thumbnail: {
-                                url: thumbnailMatch ? thumbnailMatch[1].replace(/\\/g, '') : null
-                            }
-                        };
+                    console.error(`[ERRO] Falha na tentativa ${attempt + 1} para ${username}:`, err.message);
+                    
+                    // Se não for a última tentativa, aguarda antes de tentar novamente
+                    if (attempt < maxRetries - 1) {
+                        console.log(`[DEBUG] Aguardando ${retryDelay}ms antes da próxima tentativa...`);
+                        await new Promise(resolve => setTimeout(resolve, retryDelay));
                     }
-                } catch (err) {
-                    console.log(`[WARNING] Erro ao processar HTML do canal ${username}: ${err.message}`);
                 }
-
-                if (error) {
-                    console.error(`[ERRO] Todos os endpoints falharam para ${username}:`, error.message);
-                } else {
-                    console.error(`[ERRO] Não foi possível obter dados para ${username}`);
-                }
-                return null;
             }
-
-            // Log dos dados recebidos
-            console.log(
-                `[DEBUG] Dados do canal ${username}:`,
-                JSON.stringify({
-                    id: data.id,
-                    slug: data.slug,
-                    is_banned: data.is_banned,
-                    livestream: data.livestream ? "presente" : "ausente"
-                })
-            );
-
-            // Verifica se o streamer está realmente ao vivo
-            const isLive = data.livestream !== null && !data.is_banned;
-
-            if (isLive) {
-                console.log(`[LIVE] ${username} está AO VIVO no Kick!`);
-                return data.livestream;
-            } else {
-                console.log(`[DEBUG] ${username} está offline no Kick`);
-                return null;
-            }
-        } catch (err) {
-            console.error(`[ERRO] Falha ao verificar ${username} no Kick:`, err.message);
-            return null;
         }
+
+        console.error(`[ERRO] Todas as tentativas falharam para verificar ${username} no Kick`);
+        return null;
     }
 
     async notifyChannel(streamer, liveData) {
