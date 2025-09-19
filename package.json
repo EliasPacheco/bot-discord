@@ -1,21 +1,18 @@
 {
-  "name": "discord-bot",
+  "name": "bot-discord",
   "version": "1.0.0",
-  "description": "A Discord bot that notifies when streamers go live.",
-  "main": "src/index.js",
+  "description": "",
+  "main": "index.js",
   "scripts": {
-    "start": "node src/index.js"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "dependencies": {
-    "@sparticuz/chromium": "^138.0.2",
-    "discord.js": "^14.0.0",
-    "dotenv": "^17.2.2",
-    "express": "^5.1.0",
-    "node-fetch": "^2.6.1",
-    "puppeteer": "^24.22.0",
-    "puppeteer-core": "^24.22.0",
-    "tslib": "*"
-  },
+  "keywords": [],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.4.5",
+    "node-fetch": "^2.7.0",
+    "puppeteer": "^22.3.0"
+  }
 }

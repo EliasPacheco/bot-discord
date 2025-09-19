@@ -4,6 +4,7 @@ const fetch = require("node-fetch");
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 require("dotenv").config();
 const puppeteer = require("puppeteer");
+const puppeteerConfig = require("../../puppeteer.config.cjs");
 
 class StreamerWatcher {
     constructor(client) {
@@ -21,32 +22,25 @@ class StreamerWatcher {
     async initKickBrowser() {
         if (!this.kickBrowser) {
             try {
+                console.log("[INFO] Iniciando Puppeteer com configurações personalizadas");
+                
+                // Usa as configurações do puppeteer.config.cjs
                 this.kickBrowser = await puppeteer.launch({
-                    headless: "new",
-                    args: [
-                        '--no-sandbox',
-                        '--disable-setuid-sandbox',
-                        '--disable-dev-shm-usage',
-                        '--disable-gpu',
-                        '--no-zygote',
-                        '--single-process',
-                        '--disable-background-networking',
-                        '--disable-default-apps',
-                        '--disable-extensions',
-                        '--disable-sync',
-                        '--disable-translate',
-                        '--hide-scrollbars',
-                        '--metrics-recording-only',
-                        '--mute-audio',
-                        '--no-first-run',
-                        '--safebrowsing-disable-auto-update',
-                    ],
-                    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || null,
-                    ignoreHTTPSErrors: true,
-                    timeout: 30000,
+                    ...puppeteerConfig.browserLaunchOptions,
+                    executablePath: puppeteerConfig.executablePath,
+                    args: [...puppeteerConfig.defaultArgs],
                 });
-                console.log("[INFO] Puppeteer (Kick) iniciado!");
+                
+                console.log("[INFO] Puppeteer (Kick) iniciado com sucesso!");
                 this.browserRetries = 0;
+                
+                // Configura evento de desconexão para tentar reconectar
+                this.kickBrowser.on('disconnected', async () => {
+                    console.log("[INFO] Browser desconectado, tentando reconectar...");
+                    this.kickBrowser = null;
+                    await this.initKickBrowser();
+                });
+                
             } catch (error) {
                 console.error("[ERRO] Falha ao iniciar Puppeteer:", error.message);
                 this.browserRetries++;
