@@ -184,9 +184,9 @@ class StreamerWatcher {
             // Headers atualizados para simular melhor um navegador real
             const headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'application/json',
+                'Accept': '*/*',
                 'Accept-Language': 'en-US,en;q=0.9',
-                'Referer': 'https://kick.com/',
+                'Referer': `https://kick.com/${username}`,
                 'Origin': 'https://kick.com',
                 'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120"',
                 'sec-ch-ua-mobile': '?0',
@@ -194,15 +194,37 @@ class StreamerWatcher {
                 'sec-fetch-dest': 'empty',
                 'sec-fetch-mode': 'cors',
                 'sec-fetch-site': 'same-origin',
-                'Cookie': 'cf_clearance=random' // Adicionando um cookie falso para bypass
+                'Connection': 'keep-alive',
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache'
             };
+
+            // Primeiro, tentar obter o HTML da página do canal
+            const pageRes = await fetch(`https://kick.com/${username}`, {
+                headers: {
+                    ...headers,
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                    'sec-fetch-dest': 'document',
+                    'sec-fetch-mode': 'navigate',
+                    'sec-fetch-site': 'none',
+                    'sec-fetch-user': '?1',
+                    'upgrade-insecure-requests': '1'
+                }
+            });
+
+            if (!pageRes.ok) {
+                console.log(`[WARNING] Falha ao acessar página do canal ${username} (${pageRes.status})`);
+                return null;
+            }
+
+            // Aguardar um pouco antes de fazer a próxima requisição
+            await new Promise(resolve => setTimeout(resolve, 1000));
 
             // Tentar diferentes endpoints
             const endpoints = [
-                `https://kick.com/api/v2/channels/${username.toLowerCase()}`,
-                `https://kick.com/api/v1/channels/${username.toLowerCase()}`,
-                `https://kick.com/api/v1/channels/${username.toLowerCase()}/livestream`,
-                `https://kick.com/channels/${username.toLowerCase()}`
+                `https://kick.com/api/v2/channels/${username}`,
+                `https://kick.com/api/v1/channels/${username}`,
+                `https://kick.com/api/v1/channels/${username}/livestream`
             ];
 
             let data = null;
@@ -222,6 +244,8 @@ class StreamerWatcher {
                         break;
                     } else {
                         console.log(`[WARNING] Falha no endpoint ${endpoint} (${res.status})`);
+                        // Aguardar um pouco antes de tentar o próximo endpoint
+                        await new Promise(resolve => setTimeout(resolve, 1000));
                     }
                 } catch (err) {
                     error = err;
@@ -231,6 +255,26 @@ class StreamerWatcher {
             }
 
             if (!data) {
+                // Se todas as APIs falharem, tentar extrair informações da página HTML
+                try {
+                    const html = await pageRes.text();
+                    const isLiveMatch = html.match(/isLive":true/i);
+                    const titleMatch = html.match(/"title":"([^"]+)"/);
+                    const thumbnailMatch = html.match(/"thumbnail":{"url":"([^"]+)"/);
+
+                    if (isLiveMatch) {
+                        console.log(`[DEBUG] Canal ${username} detectado como ao vivo via HTML`);
+                        return {
+                            session_title: titleMatch ? titleMatch[1] : "Live na Kick",
+                            thumbnail: {
+                                url: thumbnailMatch ? thumbnailMatch[1].replace(/\\/g, '') : null
+                            }
+                        };
+                    }
+                } catch (err) {
+                    console.log(`[WARNING] Erro ao processar HTML do canal ${username}: ${err.message}`);
+                }
+
                 if (error) {
                     console.error(`[ERRO] Todos os endpoints falharam para ${username}:`, error.message);
                 } else {
