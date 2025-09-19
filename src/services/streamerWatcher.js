@@ -181,23 +181,31 @@ class StreamerWatcher {
         try {
             console.log(`[DEBUG] Verificando Kick para ${username} via API v2`);
 
-            // Usar endpoint v2 específico como indicado pelo usuário
+            // Headers atualizados para simular melhor um navegador real
+            const headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'application/json',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Referer': 'https://kick.com/',
+                'Origin': 'https://kick.com',
+                'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120"',
+                'sec-ch-ua-mobile': '?0',
+                'sec-ch-ua-platform': '"Windows"',
+                'sec-fetch-dest': 'empty',
+                'sec-fetch-mode': 'cors',
+                'sec-fetch-site': 'same-origin'
+            };
+
             const res = await fetch(
                 `https://kick.com/api/v2/channels/${username.toLowerCase()}`,
                 {
-                    headers: {
-                        "User-Agent":
-                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                        Accept: "application/json",
-                        Referer: "https://kick.com/",
-                    },
-                },
+                    headers,
+                    method: 'GET'
+                }
             );
 
             if (!res.ok) {
-                console.log(
-                    `[WARNING] API v2 falhou (${res.status}) para ${username}`,
-                );
+                console.log(`[WARNING] API v2 falhou (${res.status}) para ${username}`);
                 return null;
             }
 
@@ -208,8 +216,8 @@ class StreamerWatcher {
                     id: data.id,
                     slug: data.slug,
                     is_banned: data.is_banned,
-                    livestream: data.livestream ? "presente" : "ausente",
-                }),
+                    livestream: data.livestream ? "presente" : "ausente"
+                })
             );
 
             // Verifica se o streamer está realmente ao vivo
@@ -223,10 +231,7 @@ class StreamerWatcher {
                 return null;
             }
         } catch (err) {
-            console.error(
-                `[ERRO] Falha ao verificar ${username} no Kick:`,
-                err.message,
-            );
+            console.error(`[ERRO] Falha ao verificar ${username} no Kick:`, err.message);
             return null;
         }
     }
