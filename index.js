@@ -92,7 +92,7 @@ client.on("interactionCreate", async (interaction) => {
     if (!interaction.isCommand()) return;
 
     const { commandName, options } = interaction;
-    
+
     if (commandName === "escolhercargo") {
         const streamerName = options.getString("streamer");
         const cargo = options.getRole("cargo");
@@ -237,7 +237,7 @@ client.on("interactionCreate", async (interaction) => {
         let canais = [];
         if (Array.isArray(data.canais)) canais = data.canais;
         else if (data.canalId) canais = [data.canalId];
-        
+
         if (!canais.includes(canal.id)) canais.push(canal.id);
         fs.writeFileSync(notificacaoPath, JSON.stringify({ canais }, null, 2));
         await interaction.reply(`Canal de notificações adicionado: <#${canal.id}>. Total de canais: ${canais.length}`);
