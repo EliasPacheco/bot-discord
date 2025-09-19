@@ -1,5 +1,4 @@
 require("dotenv").config();
-const keepAlive = require('./server');
 const {
     Client,
     GatewayIntentBits,
@@ -266,8 +265,4 @@ client.on("interactionCreate", async (interaction) => {
     }
 });
 
-// Iniciar o servidor web
-keepAlive();
-
-// Login do bot
 client.login(process.env.DISCORD_BOT_TOKEN);
