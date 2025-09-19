@@ -4,13 +4,12 @@ const fetch = require("node-fetch");
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 require("dotenv").config();
 const puppeteer = require("puppeteer-core");
-const chromium = require("@sparticuz/chromium");
 
 class StreamerWatcher {
     constructor(client) {
         this.client = client;
         this.streamers = [];
-        this.checkInterval = 60000; // 1 minuto
+        this.checkInterval = 60000;
         this.notificacaoPath = path.join(__dirname, "../data/notificacao.json");
         this.notifiedStreams = new Set();
         this.kickBrowser = null;
@@ -18,12 +17,9 @@ class StreamerWatcher {
 
     async initKickBrowser() {
         if (!this.kickBrowser) {
-            const puppeteer = require("puppeteer-core");
-            const chromium = require("@sparticuz/chromium");
-
             this.kickBrowser = await puppeteer.launch({
+                headless: true,
                 args: [
-                    ...chromium.args,
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
                     '--disable-dev-shm-usage',
@@ -31,11 +27,7 @@ class StreamerWatcher {
                     '--single-process',
                     '--no-zygote',
                 ],
-                defaultViewport: chromium.defaultViewport,
-                executablePath: await chromium.executablePath(),
-                headless: true,
             });
-
             console.log("[INFO] Puppeteer (Kick) iniciado!");
         }
     }
@@ -45,10 +37,8 @@ class StreamerWatcher {
             await this.initKickBrowser();
             const page = await this.kickBrowser.newPage();
 
-            // Navega até o perfil do streamer
             await page.goto(`https://kick.com/${username}`, { waitUntil: "networkidle2" });
 
-            // Verifica se existe badge "live"
             const isLive = await page.$('[data-test-selector="live-badge"]') !== null;
 
             await page.close();
@@ -56,7 +46,7 @@ class StreamerWatcher {
             if (isLive) {
                 return {
                     session_title: `${username} ao vivo`,
-                    thumbnail: { url: "https://kick.com/favicon.ico" }, // fallback
+                    thumbnail: { url: "https://kick.com/favicon.ico" },
                 };
             }
         } catch (err) {
