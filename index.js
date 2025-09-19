@@ -9,10 +9,10 @@ const {
 } = require("discord.js");
 const fs = require("fs");
 const path = require("path");
+const express = require('express');
 const { handleAdicionarkick } = require("./src/commands/adicionarkick");
 const { handleAdicionartwitch } = require("./src/commands/adicionartwitch");
 const StreamerWatcher = require("./src/services/streamerWatcher");
-const express = require('express');
 
 process.on('unhandledRejection', (reason, promise) => {
     console.log('[WARN] Rejeição de promessa não tratada:', reason);
@@ -270,6 +270,7 @@ client.on("interactionCreate", async (interaction) => {
     }
 });
 
+// Configuração do servidor Express
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -278,4 +279,5 @@ app.get('/', (req, res) => res.send('Bot online!'));
 
 // Inicia servidor web
 app.listen(PORT, () => console.log(`Servidor web rodando na porta ${PORT}`));
+
 client.login(process.env.DISCORD_BOT_TOKEN);
