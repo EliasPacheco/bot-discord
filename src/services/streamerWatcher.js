@@ -178,10 +178,8 @@ class StreamerWatcher {
     }
 
     async ensureBrowser() {
-        if (this.puppeteerBrowser && this.puppeteerBrowser.isConnected && this.puppeteerBrowser.isConnected()) {
-        return this.puppeteerBrowser;
-        }
-        const puppeteer = require('puppeteer');
+        if (this.puppeteerBrowser && this.puppeteerBrowser.isConnected()) return this.puppeteerBrowser;
+        const puppeteer = require('puppeteer-core');
         const launchOptions = Object.assign(
         {
             headless: true,
@@ -196,7 +194,11 @@ class StreamerWatcher {
         this.puppeteerLaunchOptions || {}
         );
 
-        this.puppeteerBrowser = await puppeteer.launch(launchOptions);
+        this.puppeteerBrowser = await puppeteer.launch({
+            executablePath: "/usr/bin/chromium-browser", // caminho do Chromium no Render/Discloud
+            headless: true,
+            args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+        });
         return this.puppeteerBrowser;
     }
 
