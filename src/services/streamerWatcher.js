@@ -177,139 +177,59 @@ class StreamerWatcher {
         return null;
     }
 
-    async ensureBrowser() {
-        if (this.puppeteerBrowser && this.puppeteerBrowser.isConnected()) return this.puppeteerBrowser;
-        const puppeteer = require('puppeteer-core');
-        const launchOptions = Object.assign(
-        {
-            headless: true,
-            args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--single-process',
-            ],
-        },
-        this.puppeteerLaunchOptions || {}
-        );
-
-        this.puppeteerBrowser = await puppeteer.launch({
-            executablePath: "/usr/bin/chromium-browser", // caminho do Chromium no Render/Discloud
-            headless: true,
-            args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
-        });
-        return this.puppeteerBrowser;
-    }
-
-    async closeBrowser() {
-        if (this.puppeteerBrowser) {
+    async checkKickLive(username) {
         try {
-            await this.puppeteerBrowser.close();
-        } catch (e) {}
-        this.puppeteerBrowser = null;
+            console.log(`[DEBUG] Verificando Kick para ${username} via API v2`);
+
+            // Usar endpoint v2 específico como indicado pelo usuário
+            const res = await fetch(
+                `https://kick.com/api/v2/channels/${username.toLowerCase()}`,
+                {
+                    headers: {
+                        "User-Agent":
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                        Accept: "application/json",
+                        Referer: "https://kick.com/",
+                    },
+                },
+            );
+
+            if (!res.ok) {
+                console.log(
+                    `[WARNING] API v2 falhou (${res.status}) para ${username}`,
+                );
+                return null;
+            }
+
+            const data = await res.json();
+            console.log(
+                `[DEBUG] Dados do canal ${username}:`,
+                JSON.stringify({
+                    id: data.id,
+                    slug: data.slug,
+                    is_banned: data.is_banned,
+                    livestream: data.livestream ? "presente" : "ausente",
+                }),
+            );
+
+            // Verifica se o streamer está realmente ao vivo
+            const isLive = data.livestream !== null && !data.is_banned;
+
+            if (isLive) {
+                console.log(`[LIVE] ${username} está AO VIVO no Kick!`);
+                return data.livestream;
+            } else {
+                console.log(`[DEBUG] ${username} está offline no Kick`);
+                return null;
+            }
+        } catch (err) {
+            console.error(
+                `[ERRO] Falha ao verificar ${username} no Kick:`,
+                err.message,
+            );
+            return null;
         }
     }
-
-        async checkKickLive(username) {
-            // tenta a rota /livestream primeiro via fetch (mais leve)
-            try {
-                const apiUrl = `https://kick.com/api/v2/channels/${username.toLowerCase()}/livestream`;
-                console.log(`[DEBUG] Tentando endpoint direto: ${apiUrl}`);
-                const res = await fetch(apiUrl, {
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-                        Accept: 'application/json, text/plain, */*'
-                    },
-                    method: 'GET',
-                });
-
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data && (data.session_title || data.stream_id || data.id)) {
-                        console.log(`[LIVE - API] ${username} AO VIVO (via /livestream)`);
-                        return data;
-                    }
-                    // se for 200 mas null, considera offline
-                    return null;
-                }
-
-                console.log(`[DEBUG] endpoint /livestream retornou status ${res.status} para ${username}`);
-            } catch (err) {
-                console.log(`[DEBUG] erro ao tentar /livestream: ${err.message}`);
-            }
-
-            // Se a API bloqueou (403 etc.), usa Puppeteer para abrir a página (simula navegador)
-            try {
-                const browser = await this.ensureBrowser();
-                const page = await browser.newPage();
-
-                // Header e viewport realistas
-                await page.setUserAgent(
-                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                );
-                await page.setExtraHTTPHeaders({
-                    'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8'
-                });
-                await page.setViewport({ width: 1280, height: 800 });
-
-                const url = `https://kick.com/${username.toLowerCase()}`;
-                console.log(`[DEBUG] Abrindo página Kick: ${url}`);
-
-                try {
-                    await page.setCacheEnabled(false);
-                    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
-                } catch (err) {
-                    console.log(`[DEBUG] page.goto falhou para ${username}: ${err.message}`);
-                }
-
-                // Tenta extrair o JSON do __NEXT_DATA__
-                const nextDataHandle = await page.$('#__NEXT_DATA__');
-                if (nextDataHandle) {
-                    const raw = await page.evaluate(el => el.textContent, nextDataHandle);
-                    try {
-                        const json = JSON.parse(raw);
-                        const livestream = json?.props?.pageProps?.channel?.livestream;
-                        if (livestream) {
-                            console.log(`[LIVE - Puppeteer] ${username} AO VIVO (extraído de __NEXT_DATA__)`);
-                            await page.close();
-                            return livestream;
-                        } else {
-                            console.log(`[DEBUG] __NEXT_DATA__ encontrado mas livestream é nulo`);
-                        }
-                    } catch (e) {
-                        console.log(`[DEBUG] falha ao parsear __NEXT_DATA__: ${e.message}`);
-                    }
-                }
-
-                // fallback: tentar capturar livestream no HTML
-                const html = await page.content();
-                const match = html.match(/"livestream":\s*(\{.*?\}|null)\s*,/s);
-                if (match) {
-                    try {
-                        const objText = match[1];
-                        if (objText !== 'null') {
-                            const obj = JSON.parse(objText);
-                            console.log(`[LIVE - Puppeteer/HTML] ${username} AO VIVO (extraído do HTML)`);
-                            await page.close();
-                            return obj;
-                        }
-                    } catch (e) {
-                        // ignora parse errors
-                    }
-                }
-
-                await page.close();
-                console.log(`[DEBUG] ${username} parece OFFLINE (página aberta, sem livestream detectado)`);
-                return null;
-
-            } catch (err) {
-                console.error(`[ERRO] Puppeteer falhou para ${username}: ${err.message}`);
-                // fecha o browser pra forçar recriação na próxima vez
-                await this.closeBrowser();
-                return null;
-            }
-        }
 
     async notifyChannel(streamer, liveData) {
         const channelIds = this.getChannelIds();
