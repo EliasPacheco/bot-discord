@@ -10,11 +10,65 @@ class StreamerWatcher {
     constructor(client) {
         this.client = client;
         this.streamers = [];
-        this.checkInterval = 60000; // Check every 60 seconds
+        this.checkInterval = 60000; // 1 minuto
         this.notificacaoPath = path.join(__dirname, "../data/notificacao.json");
+        this.notifiedStreams = new Set();
+        this.kickBrowser = null;
+    }
 
-        // Sistema de controle de notificações já enviadas
-        this.notifiedStreams = new Set(); // Guarda streamers que já foram notificados como ao vivo
+    async initKickBrowser() {
+        if (!this.kickBrowser) {
+            const puppeteer = require("puppeteer-core");
+            const chromium = require("@sparticuz/chromium");
+
+            this.kickBrowser = await puppeteer.launch({
+                args: chromium.args,
+                defaultViewport: chromium.defaultViewport,
+                executablePath: await chromium.executablePath(),
+                headless: true,
+            });
+
+            console.log("[INFO] Puppeteer (Kick) iniciado!");
+        }
+    }
+
+    async checkKickLive(username) {
+        try {
+            await this.initKickBrowser();
+            const page = await this.kickBrowser.newPage();
+
+            // Navega até o perfil do streamer
+            await page.goto(`https://kick.com/${username}`, { waitUntil: "networkidle2" });
+
+            // Verifica se existe badge "live"
+            const isLive = await page.$('[data-test-selector="live-badge"]') !== null;
+
+            await page.close();
+
+            if (isLive) {
+                return {
+                    session_title: `${username} ao vivo`,
+                    thumbnail: { url: "https://kick.com/favicon.ico" }, // fallback
+                };
+            }
+        } catch (err) {
+            console.log(`[ERRO] Falha ao checar Kick para ${username}: ${err.message}`);
+        }
+
+        return null;
+    }
+
+    async closeKickBrowser() {
+        if (this.kickBrowser) {
+            await this.kickBrowser.close();
+            this.kickBrowser = null;
+            console.log("[INFO] Puppeteer (Kick) fechado!");
+        }
+    }
+
+    startWatching() {
+        // Checa streamers a cada minuto
+        setInterval(() => this.checkStreamers(), this.checkInterval);
     }
 
     async loadStreamers() {
@@ -178,49 +232,6 @@ class StreamerWatcher {
         }
         return null;
     }
-
-    async checkKickLive(username) {
-        try {
-            const res = await fetch(`https://kick.com/${username.toLowerCase()}`, {
-                headers: {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-                                "AppleWebKit/537.36 (KHTML, like Gecko) " +
-                                "Chrome/140.0.0.0 Safari/537.36",
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                    "Accept-Language": "en-US,en;q=0.9",
-                    "Referer": `https://kick.com/${username}`,
-                    "Sec-Fetch-Site": "same-origin",
-                    "Sec-Fetch-Mode": "navigate",
-                    "Sec-Fetch-User": "?1",
-                    "Sec-Fetch-Dest": "document",
-                },
-            });
-
-            // Se o servidor bloquear direto, res.status vai ser 403
-            if (!res.ok) {
-                console.log(`[WARNING] Kick fetch falhou para ${username}: ${res.status}`);
-                return null;
-            }
-
-            const html = await res.text();
-
-            // Verifica badge de live no HTML
-            const isLive = html.includes('data-test-selector="live-badge"');
-
-            if (isLive) {
-                return {
-                    session_title: `${username} ao vivo`,
-                    thumbnail: { url: "https://kick.com/favicon.ico" }, // fallback
-                };
-            }
-
-        } catch (err) {
-            console.log(`[ERRO] Falha ao checar Kick para ${username}: ${err.message}`);
-        }
-
-        return null;
-    }
-
 
     async notifyChannel(streamer, liveData) {
         const channelIds = this.getChannelIds();
