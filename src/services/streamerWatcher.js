@@ -3,7 +3,7 @@ const path = require("path");
 const fetch = require("node-fetch");
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 require("dotenv").config();
-const puppeteer = require("puppeteer-core");
+const puppeteer = require("puppeteer");
 
 class StreamerWatcher {
     constructor(client) {
