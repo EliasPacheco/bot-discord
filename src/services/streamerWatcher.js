@@ -179,7 +179,7 @@ class StreamerWatcher {
 
     async checkKickLive(username) {
         try {
-            console.log(`[DEBUG] Verificando Kick para ${username} via API v2`);
+            console.log(`[DEBUG] Verificando Kick para ${username}`);
 
             // Headers atualizados para simular melhor um navegador real
             const headers = {
@@ -193,23 +193,53 @@ class StreamerWatcher {
                 'sec-ch-ua-platform': '"Windows"',
                 'sec-fetch-dest': 'empty',
                 'sec-fetch-mode': 'cors',
-                'sec-fetch-site': 'same-origin'
+                'sec-fetch-site': 'same-origin',
+                'Cookie': 'cf_clearance=random' // Adicionando um cookie falso para bypass
             };
 
-            const res = await fetch(
+            // Tentar diferentes endpoints
+            const endpoints = [
                 `https://kick.com/api/v2/channels/${username.toLowerCase()}`,
-                {
-                    headers,
-                    method: 'GET'
-                }
-            );
+                `https://kick.com/api/v1/channels/${username.toLowerCase()}`,
+                `https://kick.com/api/v1/channels/${username.toLowerCase()}/livestream`,
+                `https://kick.com/channels/${username.toLowerCase()}`
+            ];
 
-            if (!res.ok) {
-                console.log(`[WARNING] API v2 falhou (${res.status}) para ${username}`);
+            let data = null;
+            let error = null;
+
+            for (const endpoint of endpoints) {
+                try {
+                    console.log(`[DEBUG] Tentando endpoint: ${endpoint}`);
+                    const res = await fetch(endpoint, {
+                        headers,
+                        method: 'GET'
+                    });
+
+                    if (res.ok) {
+                        data = await res.json();
+                        console.log(`[DEBUG] Sucesso com endpoint: ${endpoint}`);
+                        break;
+                    } else {
+                        console.log(`[WARNING] Falha no endpoint ${endpoint} (${res.status})`);
+                    }
+                } catch (err) {
+                    error = err;
+                    console.log(`[WARNING] Erro no endpoint ${endpoint}: ${err.message}`);
+                    continue;
+                }
+            }
+
+            if (!data) {
+                if (error) {
+                    console.error(`[ERRO] Todos os endpoints falharam para ${username}:`, error.message);
+                } else {
+                    console.error(`[ERRO] Não foi possível obter dados para ${username}`);
+                }
                 return null;
             }
 
-            const data = await res.json();
+            // Log dos dados recebidos
             console.log(
                 `[DEBUG] Dados do canal ${username}:`,
                 JSON.stringify({
