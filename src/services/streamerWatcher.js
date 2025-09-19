@@ -3,6 +3,8 @@ const path = require("path");
 const fetch = require("node-fetch");
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 require("dotenv").config();
+const puppeteer = require("puppeteer-core");
+const chromium = require("@sparticuz/chromium");
 
 class StreamerWatcher {
     constructor(client) {
@@ -179,54 +181,67 @@ class StreamerWatcher {
 
     async checkKickLive(username) {
         try {
-            console.log(`[DEBUG] Verificando Kick para ${username} via API v2`);
+            console.log(`[DEBUG] Tentando Kick API v2 para ${username}`);
 
-            // Usar endpoint v2 específico como indicado pelo usuário
             const res = await fetch(
                 `https://kick.com/api/v2/channels/${username.toLowerCase()}`,
                 {
                     headers: {
-                        "User-Agent":
-                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
                         Accept: "application/json",
                         Referer: "https://kick.com/",
                     },
-                },
+                }
             );
 
-            if (!res.ok) {
-                console.log(
-                    `[WARNING] API v2 falhou (${res.status}) para ${username}`,
-                );
-                return null;
+            if (res.ok) {
+                const data = await res.json();
+                const isLive = data.livestream !== null && !data.is_banned;
+
+                if (isLive) {
+                    console.log(`[LIVE] ${username} está AO VIVO no Kick (API)!`);
+                    return data.livestream;
+                } else {
+                    console.log(`[DEBUG] ${username} está offline no Kick (API)`);
+                    return null;
+                }
             }
 
-            const data = await res.json();
-            console.log(
-                `[DEBUG] Dados do canal ${username}:`,
-                JSON.stringify({
-                    id: data.id,
-                    slug: data.slug,
-                    is_banned: data.is_banned,
-                    livestream: data.livestream ? "presente" : "ausente",
-                }),
-            );
+            console.log(`[WARNING] API v2 falhou (${res.status}), usando Puppeteer`);
 
-            // Verifica se o streamer está realmente ao vivo
-            const isLive = data.livestream !== null && !data.is_banned;
+        } catch (err) {
+            console.log(`[WARNING] API v2 falhou para ${username}: ${err.message}, usando Puppeteer`);
+        }
+
+        // --- Fallback Puppeteer ---
+        try {
+            const browser = await puppeteer.launch({
+                args: chromium.args,
+                defaultViewport: chromium.defaultViewport,
+                executablePath: await chromium.executablePath(),
+                headless: true,
+            });
+
+            const page = await browser.newPage();
+            await page.goto(`https://kick.com/${username}`, { waitUntil: "networkidle2" });
+
+            // Extrai status da live do HTML
+            const isLive = await page.evaluate(() => {
+                const liveBadge = document.querySelector('[data-test-selector="live-badge"]');
+                return liveBadge ? true : false;
+            });
+
+            await browser.close();
 
             if (isLive) {
-                console.log(`[LIVE] ${username} está AO VIVO no Kick!`);
-                return data.livestream;
+                console.log(`[LIVE] ${username} está AO VIVO no Kick (Puppeteer)!`);
+                return { session_title: username + " ao vivo" }; // fallback minimal
             } else {
-                console.log(`[DEBUG] ${username} está offline no Kick`);
+                console.log(`[DEBUG] ${username} está offline no Kick (Puppeteer)`);
                 return null;
             }
         } catch (err) {
-            console.error(
-                `[ERRO] Falha ao verificar ${username} no Kick:`,
-                err.message,
-            );
+            console.error(`[ERRO] Fallback Puppeteer falhou para ${username}: ${err.message}`);
             return null;
         }
     }
