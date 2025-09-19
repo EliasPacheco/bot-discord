@@ -1,16 +1,44 @@
 {
   "streamers": [
     {
+      "type": "kick",
+      "name": "doiska-rj"
+    },
+    {
       "type": "twitch",
       "name": "pachequinh0_"
     },
     {
       "type": "kick",
-      "name": "doiska-rj"
+      "name": "pachequinh0"
+    },
+    {
+      "type": "twitch",
+      "name": "dnz__7"
+    },
+    {
+      "type": "twitch",
+      "name": "solotovmlk"
+    },
+    {
+      "type": "twitch",
+      "name": "lc_malandro"
+    },
+    {
+      "type": "twitch",
+      "name": "maykemlk"
+    },
+    {
+      "type": "twitch",
+      "name": "b1elz1n7_"
     },
     {
       "type": "kick",
-      "name": "pachequinh0"
+      "name": "dnz-7"
+    },
+    {
+      "type": "kick",
+      "name": "b1elz1n7"
     }
   ]
 }
