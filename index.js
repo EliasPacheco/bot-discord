@@ -12,6 +12,7 @@ const path = require("path");
 const { handleAdicionarkick } = require("./src/commands/adicionarkick");
 const { handleAdicionartwitch } = require("./src/commands/adicionartwitch");
 const StreamerWatcher = require("./src/services/streamerWatcher");
+const express = require('express');
 
 const client = new Client({
     intents: [
@@ -265,4 +266,12 @@ client.on("interactionCreate", async (interaction) => {
     }
 });
 
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Rota de ping para manter o bot online
+app.get('/', (req, res) => res.send('Bot online!'));
+
+// Inicia servidor web
+app.listen(PORT, () => console.log(`Servidor web rodando na porta ${PORT}`));
 client.login(process.env.DISCORD_BOT_TOKEN);

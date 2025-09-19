@@ -1,7 +1,0 @@
-services:
-  - type: worker
-    name: discord-bot
-    env: node
-    buildCommand: "npm install"
-    startCommand: "node index.js"
-    autoDeploy: true
