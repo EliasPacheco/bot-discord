@@ -1,5 +1,8 @@
 # Dependências do Node
 node_modules/
+.env
+.cache/
+.DS_Store
 
 # Logs
 logs

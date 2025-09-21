@@ -4,7 +4,6 @@ const fetch = require("node-fetch");
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 require("dotenv").config();
 const puppeteer = require("puppeteer");
-const puppeteerConfig = require("../../puppeteer.config.cjs");
 
 class StreamerWatcher {
     constructor(client) {
@@ -24,13 +23,23 @@ class StreamerWatcher {
             try {
                 console.log("[INFO] Iniciando Puppeteer com configurações personalizadas");
                 
-                // Usa as configurações do puppeteer.config.cjs
-                this.kickBrowser = await puppeteer.launch({
-                    ...puppeteerConfig.browserLaunchOptions,
-                    executablePath: puppeteerConfig.executablePath,
-                    args: [...puppeteerConfig.defaultArgs],
-                });
-                
+                // Configurações do Puppeteer
+                const options = {
+                    headless: "new",
+                    args: [
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-dev-shm-usage',
+                        '--disable-accelerated-2d-canvas',
+                        '--disable-gpu',
+                        '--no-first-run',
+                        '--no-zygote',
+                        '--single-process',
+                        '--disable-extensions'
+                    ]
+                };
+
+                this.kickBrowser = await puppeteer.launch(options);
                 console.log("[INFO] Puppeteer (Kick) iniciado com sucesso!");
                 this.browserRetries = 0;
                 
