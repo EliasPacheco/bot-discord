@@ -23,9 +23,10 @@ class StreamerWatcher {
             try {
                 console.log("[INFO] Iniciando Puppeteer com configurações personalizadas");
                 
-                // Configurações do Puppeteer
+                // Configurações do Puppeteer - removendo qualquer executablePath
                 const options = {
                     headless: "new",
+                    // Não definir executablePath para usar o Chrome embutido do Puppeteer
                     args: [
                         '--no-sandbox',
                         '--disable-setuid-sandbox',
@@ -35,9 +36,15 @@ class StreamerWatcher {
                         '--no-first-run',
                         '--no-zygote',
                         '--single-process',
-                        '--disable-extensions'
+                        '--disable-extensions',
+                        '--disable-web-security',
+                        '--disable-features=VizDisplayCompositor'
                     ]
                 };
+
+                // Limpar qualquer variável de ambiente que possa interferir
+                delete process.env.CHROME_BIN;
+                delete process.env.CHROMIUM_BIN;
 
                 this.kickBrowser = await puppeteer.launch(options);
                 console.log("[INFO] Puppeteer (Kick) iniciado com sucesso!");
