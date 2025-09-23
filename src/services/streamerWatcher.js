@@ -25,21 +25,21 @@ class StreamerWatcher {
         if (!this.browser) {
             try {
                 this.browser = await puppeteer.launch({
-                    headless: true,
+                    headless: true, // modo sem interface
                     args: [
                         "--no-sandbox",
                         "--disable-setuid-sandbox",
                         "--disable-web-security",
                         "--disable-features=VizDisplayCompositor"
                     ],
-                    defaultViewport: null,
-                    channel: 'chrome'
+                    defaultViewport: null
+                    // removido "channel: 'chrome'" para usar Chromium embutido
                 });
                 this.page = await this.browser.newPage();
                 await this.page.setUserAgent(
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
                 );
-                console.log("[INFO] Puppeteer iniciado com sucesso.");
+                console.log("[INFO] Puppeteer iniciado com sucesso usando Chromium embutido.");
             } catch (err) {
                 console.error("[ERRO] Falha ao inicializar Puppeteer:", err.message);
             }
