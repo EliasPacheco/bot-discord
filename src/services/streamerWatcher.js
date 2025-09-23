@@ -15,6 +15,10 @@ class StreamerWatcher {
 
         this.browser = null;
         this.page = null;
+
+        // Twitch token
+        this.twitchToken = null;
+        this.twitchTokenExpires = 0;
     }
 
     async initBrowser() {
@@ -70,11 +74,6 @@ class StreamerWatcher {
         await this.loadStreamers();
         await this.initBrowser();
 
-        if (!this.page) {
-            console.error("[ERRO] Browser não inicializado. Verifique o Puppeteer.");
-            return;
-        }
-
         for (const streamer of this.streamers) {
             const streamKey = `${streamer.type}:${streamer.name}`;
             console.log(`[DEBUG] Checando streamer: ${streamer.name} (${streamer.type})`);
@@ -103,73 +102,96 @@ class StreamerWatcher {
 
     async checkIfLive(streamer) {
         if (streamer.type === "kick") return await this.checkKickLive(streamer.name);
+        if (streamer.type === "twitch") return await this.checkTwitchLive(streamer.name);
         return null;
     }
 
-    async checkKickLive(username) {
+    // ===================== TWITCH =====================
+    async checkTwitchLive(username) {
         try {
-            const url = `https://kick.com/api/v1/channels/${username}`;
-            console.log(`[DEBUG] Consultando Kick API para ${username}: ${url}`);
+            if (!this.twitchToken || this.twitchTokenExpires < Date.now()) {
+                const res = await fetch(
+                    `https://id.twitch.tv/oauth2/token?client_id=${process.env.TWITCH_CLIENT_ID}&client_secret=${process.env.TWITCH_CLIENT_SECRET}&grant_type=client_credentials`,
+                    { method: "POST" }
+                );
+                const data = await res.json();
+                this.twitchToken = data.access_token;
+                this.twitchTokenExpires = Date.now() + data.expires_in * 1000;
+            }
 
-            const headers = {
-                'Accept': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
-                'Origin': 'https://kick.com',
-                'Referer': `https://kick.com/${username}`
-            };
-
-            const response = await fetch(url, { headers });
-            console.log(`[DEBUG] Status HTTP: ${response.status}`);
-
-            if (!response.ok) {
-                if (response.status === 403) {
-                    console.log(`[INFO] Tentando verificar ${username} usando Puppeteer...`);
-                    return await this.checkKickLiveWithPuppeteer(username);
+            const res = await fetch(
+                `https://api.twitch.tv/helix/streams?user_login=${username}`,
+                {
+                    headers: {
+                        "Client-ID": process.env.TWITCH_CLIENT_ID,
+                        Authorization: `Bearer ${this.twitchToken}`
+                    }
                 }
-                console.error(`[ERRO] Resposta não OK da API Kick para ${username}`);
-                return null;
+            );
+            const data = await res.json();
+            if (data.data && data.data.length > 0 && data.data[0].type === "live") {
+                return data.data[0];
             }
-
-            const data = await response.json();
-            console.log(`[DEBUG] Dados recebidos da Kick API para ${username}:`, data);
-
-            if (data.livestream) {
-                console.log(`[INFO] ${username} está AO VIVO!`);
-                return {
-                    session_title: data.livestream.session_title || "Live no Kick",
-                    thumbnail: data.livestream.thumbnail?.url,
-                    viewers: data.livestream.viewer_count || 0
-                };
-            } else {
-                console.log(`[INFO] ${username} não está ao vivo.`);
-                return null;
-            }
-        } catch (error) {
-            console.error(`[ERRO] Falha ao consultar Kick para ${username}:`, error.message);
+            return null;
+        } catch (err) {
+            console.error(`[ERRO] Falha ao consultar Twitch para ${username}:`, err.message);
             return null;
         }
     }
 
+    // ===================== KICK =====================
+    // ===================== KICK =====================
+async checkKickLive(username) {
+    try {
+        // Tenta usar a API v2 primeiro
+        const url = `https://kick.com/api/v2/channels/${username.toLowerCase()}`;
+        console.log(`[DEBUG] Consultando Kick API v2 para ${username}: ${url}`);
+
+        const res = await fetch(url, {
+            headers: {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                Accept: "application/json",
+                Referer: "https://kick.com/"
+            }
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            const isLive = data.livestream !== null && !data.is_banned;
+
+            if (isLive) {
+                return {
+                    session_title: data.livestream.session_title || "Live na Kick",
+                    thumbnail: data.livestream.thumbnail?.url,
+                    viewers: data.livestream.viewer_count || 0
+                };
+            }
+        }
+
+        // Se API falhar ou não estiver ao vivo, tenta Puppeteer
+        console.log(`[INFO] Tentando verificar ${username} usando Puppeteer...`);
+        return await this.checkKickLiveWithPuppeteer(username);
+
+    } catch (err) {
+        console.error(`[ERRO] Falha ao consultar Kick para ${username}:`, err.message);
+        return null;
+    }
+}
+
+    // Função Puppeteer já fornecida
     async checkKickLiveWithPuppeteer(username) {
         try {
-            // Inicializa browser se não existir
-            if (!this.browser) {
-                await this.initBrowser();
-            }
+            if (!this.browser) await this.initBrowser();
 
             const url = `https://kick.com/${username}`;
             console.log(`[INFO] Acessando página do streamer ${username} via Puppeteer: ${url}`);
 
-            // Acessa a página com timeout maior e networkidle2
             await this.page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
-
-            // Define headers extras para simular navegador real
             await this.page.setExtraHTTPHeaders({
                 'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
                 'Referer': url,
             });
 
-            // Verifica se está ao vivo
             const isLive = await this.page.evaluate(() => {
                 const liveBadge = document.querySelector('[data-test-id="live-indicator"]');
                 const videoPlayer = document.querySelector('video');
@@ -181,13 +203,11 @@ class StreamerWatcher {
                 return null;
             }
 
-            // Pega informações da live
             const streamInfo = await this.page.evaluate(() => {
                 const title = document.querySelector('h1')?.textContent || "Live no Kick";
                 const viewersText = document.querySelector('[data-test-id="viewer-count"]')?.textContent || "0";
                 const viewers = parseInt(viewersText.replace(/[^0-9]/g, '')) || 0;
                 const thumbnail = document.querySelector('video')?.poster || null;
-
                 return { title, viewers, thumbnail };
             });
 
@@ -203,52 +223,35 @@ class StreamerWatcher {
         }
     }
 
-    async checkLiveKick(username) {
-        try {
-            console.log(`[INFO] Verificando status do streamer ${username} no Kick`);
-            const liveData = await this.checkKickLive(username);
-
-            if (liveData) {
-                // Criar um objeto streamer temporário para a notificação
-                const streamer = {
-                    name: username,
-                    type: "kick"
-                };
-
-                // Verificar se já foi notificado
-                const streamKey = `kick:${username}`;
-                if (!this.notifiedStreams.has(streamKey)) {
-                    console.log(`[INFO] Enviando notificação para ${username}`);
-                    await this.notifyChannel(streamer, liveData);
-                    this.notifiedStreams.add(streamKey);
-                    return true;
-                } else {
-                    console.log(`[INFO] ${username} já está notificado`);
-                    return true;
-                }
-            } else {
-                console.log(`[INFO] ${username} não está ao vivo`);
-                return false;
-            }
-        } catch (error) {
-            console.error(`[ERRO] Falha ao verificar streamer ${username}:`, error.message);
-            return false;
-        }
-    }
-
     async notifyChannel(streamer, liveData) {
         const channelIds = this.getChannelIds();
         if (!channelIds.length) return;
 
-        const url = `https://kick.com/${streamer.name}`;
-        const embed = {
-            title: liveData.session_title,
-            url,
-            image: { url: liveData.thumbnail || "https://kick.com/favicon.ico" },
-            author: { name: `${streamer.name} - Kick`, icon_url: "https://kick.com/favicon.ico" },
-            color: 0x53fc18,
-            footer: { text: `${liveData.viewers} espectadores` }
-        };
+        let url = streamer.type === "twitch" ? `https://twitch.tv/${streamer.name}` : `https://kick.com/${streamer.name}`;
+        let embed;
+
+        if (streamer.type === "twitch") {
+            const thumb = liveData.thumbnail_url?.replace("{width}", "640").replace("{height}", "360");
+            embed = {
+                title: liveData.title,
+                url,
+                image: { url: thumb },
+                author: {
+                    name: `${streamer.name} - Twitch`,
+                    icon_url: "https://static.twitchcdn.net/assets/favicon-32-e29e246c157142c94346.png"
+                },
+                color: 0x6441a5
+            };
+        } else {
+            embed = {
+                title: liveData.session_title,
+                url,
+                image: { url: liveData.thumbnail || "https://kick.com/favicon.ico" },
+                author: { name: `${streamer.name} - Kick`, icon_url: "https://kick.com/favicon.ico" },
+                color: 0x53fc18,
+                footer: { text: `${liveData.viewers} espectadores` }
+            };
+        }
 
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setLabel("Acessar").setStyle(ButtonStyle.Link).setURL(url)
@@ -261,8 +264,8 @@ class StreamerWatcher {
                     await channel.send({ content: `O ${streamer.name} está AO VIVO! @everyone`, embeds: [embed], components: [row] });
                     console.log(`[INFO] Notificação enviada para ${channelId}`);
                 }
-            } catch (error) {
-                console.error(`[ERRO] Falha ao enviar notificação para ${channelId}:`, error.message);
+            } catch (err) {
+                console.error(`[ERRO] Falha ao enviar notificação para ${channelId}:`, err.message);
             }
         }
     }
