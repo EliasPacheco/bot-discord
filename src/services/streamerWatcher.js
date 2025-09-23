@@ -152,45 +152,51 @@ class StreamerWatcher {
 
     async checkKickLiveWithPuppeteer(username) {
         try {
-            if (!this.page) {
+            // Inicializa browser se não existir
+            if (!this.browser) {
                 await this.initBrowser();
             }
 
             const url = `https://kick.com/${username}`;
-            await this.page.goto(url, { waitUntil: 'networkidle0' });
+            console.log(`[INFO] Acessando página do streamer ${username} via Puppeteer: ${url}`);
 
-            // Verifica se o streamer está ao vivo procurando elementos específicos da página
-            const isLive = await this.page.evaluate(() => {
-                // Procura por elementos que indicam que a stream está ao vivo
-                const liveIndicators = document.querySelectorAll('[data-test-id="live-indicator"]');
-                const videoPlayer = document.querySelector('video');
-                const chatContainer = document.querySelector('[data-test-id="chat-container"]');
-                
-                return liveIndicators.length > 0 || (videoPlayer && chatContainer);
+            // Acessa a página com timeout maior e networkidle2
+            await this.page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+
+            // Define headers extras para simular navegador real
+            await this.page.setExtraHTTPHeaders({
+                'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+                'Referer': url,
             });
 
-            if (isLive) {
-                // Obtém informações da live
-                const streamInfo = await this.page.evaluate(() => {
-                    const title = document.querySelector('h1')?.textContent || "Live no Kick";
-                    const viewers = document.querySelector('[data-test-id="viewer-count"]')?.textContent || "0";
-                    const thumbnail = document.querySelector('video')?.poster || null;
+            // Verifica se está ao vivo
+            const isLive = await this.page.evaluate(() => {
+                const liveBadge = document.querySelector('[data-test-id="live-indicator"]');
+                const videoPlayer = document.querySelector('video');
+                return liveBadge !== null || videoPlayer !== null;
+            });
 
-                    return {
-                        title,
-                        viewers: parseInt(viewers.replace(/[^0-9]/g, '')) || 0,
-                        thumbnail
-                    };
-                });
-
-                return {
-                    session_title: streamInfo.title,
-                    thumbnail: streamInfo.thumbnail,
-                    viewers: streamInfo.viewers
-                };
+            if (!isLive) {
+                console.log(`[INFO] ${username} não está ao vivo.`);
+                return null;
             }
 
-            return null;
+            // Pega informações da live
+            const streamInfo = await this.page.evaluate(() => {
+                const title = document.querySelector('h1')?.textContent || "Live no Kick";
+                const viewersText = document.querySelector('[data-test-id="viewer-count"]')?.textContent || "0";
+                const viewers = parseInt(viewersText.replace(/[^0-9]/g, '')) || 0;
+                const thumbnail = document.querySelector('video')?.poster || null;
+
+                return { title, viewers, thumbnail };
+            });
+
+            console.log(`[INFO] ${username} está AO VIVO! Título: ${streamInfo.title}, Viewers: ${streamInfo.viewers}`);
+            return {
+                session_title: streamInfo.title,
+                viewers: streamInfo.viewers,
+                thumbnail: streamInfo.thumbnail
+            };
         } catch (error) {
             console.error(`[ERRO] Falha ao verificar ${username} com Puppeteer:`, error.message);
             return null;
