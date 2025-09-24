@@ -11,6 +11,7 @@ class StreamerWatcher {
         this.streamers = [];
         this.checkInterval = 60000; // 1 minuto
         this.notificacaoPath = path.join(__dirname, "../data/notificacao.json");
+        this.notifiedStreamsPath = path.join(__dirname, "../data/notified_streams.json");
         this.notifiedStreams = new Set();
 
         this.browser = null;
@@ -19,6 +20,9 @@ class StreamerWatcher {
         // Twitch token
         this.twitchToken = null;
         this.twitchTokenExpires = 0;
+        
+        // Carregar streamers já notificados
+        this.loadNotifiedStreams();
     }
 
     async initBrowser() {
@@ -70,8 +74,51 @@ class StreamerWatcher {
         return [];
     }
 
+    // Carregar streamers já notificados do arquivo
+    loadNotifiedStreams() {
+        try {
+            if (fs.existsSync(this.notifiedStreamsPath)) {
+                const data = JSON.parse(fs.readFileSync(this.notifiedStreamsPath));
+                if (Array.isArray(data.streams)) {
+                    // Limpa o Set antes de adicionar novos itens
+                    this.notifiedStreams.clear();
+                    data.streams.forEach(stream => this.notifiedStreams.add(stream));
+                    console.log(`[INFO] Carregados ${data.streams.length} streamers já notificados.`);
+                }
+            } else {
+                // Cria o arquivo se não existir
+                this.saveNotifiedStreams();
+            }
+        } catch (error) {
+            console.error("[ERRO] Falha ao carregar streamers notificados:", error.message);
+            // Garante que o arquivo seja criado mesmo em caso de erro
+            this.saveNotifiedStreams();
+        }
+    }
+
+    // Salvar streamers notificados em arquivo
+    saveNotifiedStreams() {
+        try {
+            const data = {
+                streams: Array.from(this.notifiedStreams),
+                lastUpdated: new Date().toISOString()
+            };
+            // Garante que o diretório existe
+            const dir = path.dirname(this.notifiedStreamsPath);
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true });
+            }
+            fs.writeFileSync(this.notifiedStreamsPath, JSON.stringify(data, null, 2));
+            console.log(`[INFO] Salvos ${data.streams.length} streamers notificados.`);
+        } catch (error) {
+            console.error("[ERRO] Falha ao salvar streamers notificados:", error.message);
+        }
+    }
+
     async checkStreamers() {
+        // Carrega os streamers e garante que o estado persistido seja carregado
         await this.loadStreamers();
+        this.loadNotifiedStreams();
         await this.initBrowser();
 
         for (const streamer of this.streamers) {
@@ -82,18 +129,26 @@ class StreamerWatcher {
                 const liveData = await this.checkIfLive(streamer);
                 console.log(`[DEBUG] Status de ${streamer.name}: ${liveData ? "AO VIVO" : "offline"}`);
 
+                // Streamer está ao vivo
                 if (liveData) {
+                    // Verifica se já foi notificado
                     if (!this.notifiedStreams.has(streamKey)) {
                         console.log(`[INFO] ${streamer.name} entrou ao vivo!`);
                         await this.notifyChannel(streamer, liveData);
                         await this.updateLiveRole(streamer.name, true);
                         this.notifiedStreams.add(streamKey);
+                        this.saveNotifiedStreams(); // Salva o estado após adicionar
+                    } else {
+                        console.log(`[INFO] ${streamer.name} continua ao vivo. Notificação já enviada anteriormente.`);
                     }
-                } else {
+                } 
+                // Streamer está offline
+                else {
                     if (this.notifiedStreams.has(streamKey)) {
                         console.log(`[INFO] ${streamer.name} saiu do ar.`);
                         await this.updateLiveRole(streamer.name, false);
                         this.notifiedStreams.delete(streamKey);
+                        this.saveNotifiedStreams(); // Salva o estado após remover
                     }
                 }
             } catch (error) {
@@ -194,12 +249,62 @@ class StreamerWatcher {
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
             );
 
-            await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+            // Limpar cache e cookies para evitar problemas de detecção
+            const client = await page.target().createCDPSession();
+            await client.send('Network.clearBrowserCookies');
+            await client.send('Network.clearBrowserCache');
+            
+            // Aumentando o timeout e adicionando mais opções de espera
+            await page.goto(url, { 
+                waitUntil: ['networkidle2', 'domcontentloaded', 'load'], 
+                timeout: 90000 
+            });
+            
+            // Aguarda um pouco para garantir que elementos dinâmicos sejam carregados
+            // Usando setTimeout em vez de waitForTimeout
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            
+            // Tenta recarregar a página se não detectar elementos importantes
+            try {
+                const hasContent = await page.evaluate(() => {
+                    return document.querySelector('video') !== null || 
+                           document.querySelector('h1') !== null;
+                });
+                
+                if (!hasContent) {
+                    console.log(`[INFO] Recarregando página de ${username} para melhor detecção...`);
+                    await page.reload({ waitUntil: ['networkidle2', 'domcontentloaded', 'load'] });
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+            } catch (error) {
+                console.log(`[WARN] Erro ao verificar conteúdo inicial: ${error.message}`);
+            }
 
+            // Verificação mais robusta do status da live
             const isLive = await page.evaluate(() => {
+                // Múltiplos seletores para verificar se está ao vivo
                 const liveBadge = document.querySelector('[data-test-id="live-indicator"]');
                 const videoPlayer = document.querySelector('video');
-                return liveBadge !== null || videoPlayer !== null;
+                const liveText = Array.from(document.querySelectorAll('*')).find(el => 
+                    el.textContent && el.textContent.toLowerCase().includes('ao vivo'));
+                const streamContainer = document.querySelector('.stream-container, .livestream');
+                const videoContainer = document.querySelector('.video-container');
+                const chatContainer = document.querySelector('.chat-container, .chatroom');
+                
+                // Verificar se há elementos de vídeo com atributos específicos
+                const activeVideo = document.querySelector('video[src], video[data-setup], video[autoplay]');
+                
+                // Verificar se há elementos de UI que indicam transmissão ao vivo
+                const liveUI = document.querySelector('.live, .live-now, .is-live');
+                
+                return liveBadge !== null || 
+                       videoPlayer !== null || 
+                       liveText !== undefined || 
+                       streamContainer !== null ||
+                       videoContainer !== null ||
+                       chatContainer !== null ||
+                       activeVideo !== null ||
+                       liveUI !== null;
             });
 
             if (!isLive) {
