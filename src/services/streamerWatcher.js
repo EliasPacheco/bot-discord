@@ -9,7 +9,7 @@ class StreamerWatcher {
     constructor(client) {
         this.client = client;
         this.streamers = [];
-        this.checkInterval = 60000; // 1 minuto
+        this.checkInterval = 180000; // 3 minutos
         this.notificacaoPath = path.join(__dirname, "../data/notificacao.json");
         this.notifiedStreamsPath = path.join(__dirname, "../data/notified_streams.json");
         this.notifiedStreams = new Set();
