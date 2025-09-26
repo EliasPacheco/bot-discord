@@ -15,9 +15,7 @@ class StreamerWatcher {
         this.notifiedStreams = new Set();
 
         this.browser = null;
-        this.page = null;
-        this.pages = new Map();
-
+        
         // Twitch token
         this.twitchToken = null;
         this.twitchTokenExpires = 0;
@@ -28,48 +26,21 @@ class StreamerWatcher {
 
     async initBrowser() {
         if (!this.browser) {
-            try {
-                this.browser = await puppeteer.launch({
-                    headless: true, // modo sem interface
-                    args: [
-                        "--no-sandbox",
-                        "--disable-setuid-sandbox",
-                        "--disable-web-security",
-                        "--disable-features=VizDisplayCompositor"
-                    ],
-                    defaultViewport: null
-                });
-                this.page = await this.browser.newPage();
-                await this.page.setUserAgent(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
-                );
-                console.log("[INFO] Puppeteer iniciado com sucesso usando Chromium embutido.");
-            } catch (err) {
-                console.error("[ERRO] Falha ao inicializar Puppeteer:", err.message);
-            }
+            console.log('[INFO] Iniciando navegador...');
+            this.browser = await puppeteer.launch({
+                headless: "new",
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-accelerated-2d-canvas',
+                    '--disable-gpu',
+                    '--window-size=1920x1080',
+                ]
+            });
+            console.log('[INFO] Navegador iniciado com sucesso!');
         }
-    }
-    async _setupPage(page) {
-        // define UA e viewport
-        await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36");
-        await page.setViewport({ width: 1280, height: 720 });
-
-        // stealth-ish: esconde webdriver e define alguns props comuns
-        await page.evaluateOnNewDocument(() => {
-            try {
-                // false webdriver
-                Object.defineProperty(navigator, 'webdriver', { get: () => false, configurable: true });
-
-                // fake plugins / languages
-                Object.defineProperty(navigator, 'languages', { get: () => ['pt-BR', 'en-US'], configurable: true });
-                Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5], configurable: true });
-
-                // chrome object
-                window.chrome = window.chrome || { runtime: {} };
-            } catch (e) {
-                // ignore
-            }
-        });
+        return this.browser;
     }
 
     async loadStreamers() {
@@ -101,14 +72,13 @@ class StreamerWatcher {
         try {
             if (fs.existsSync(this.notifiedStreamsPath)) {
                 const data = JSON.parse(fs.readFileSync(this.notifiedStreamsPath));
-                if (Array.isArray(data.streams)) {
-                    // Limpa o Set antes de adicionar novos itens
-                    this.notifiedStreams.clear();
-                    data.streams.forEach(stream => this.notifiedStreams.add(stream));
-                    console.log(`[INFO] Carregados ${data.streams.length} streamers já notificados.`);
+                if (data.streams && typeof data.streams === 'object') {
+                    this.notifiedStreams = new Map(Object.entries(data.streams));
+                    console.log(`[INFO] Carregados ${this.notifiedStreams.size} streamers já notificados.`);
                 }
             } else {
                 // Cria o arquivo se não existir
+                this.notifiedStreams = new Map();
                 this.saveNotifiedStreams();
             }
         } catch (error) {
@@ -122,7 +92,7 @@ class StreamerWatcher {
     saveNotifiedStreams() {
         try {
             const data = {
-                streams: Array.from(this.notifiedStreams),
+                streams: Object.fromEntries(this.notifiedStreams),
                 lastUpdated: new Date().toISOString()
             };
             // Garante que o diretório existe
@@ -131,7 +101,7 @@ class StreamerWatcher {
                 fs.mkdirSync(dir, { recursive: true });
             }
             fs.writeFileSync(this.notifiedStreamsPath, JSON.stringify(data, null, 2));
-            console.log(`[INFO] Salvos ${data.streams.length} streamers notificados.`);
+            console.log(`[INFO] Salvos ${Object.keys(data.streams).length} streamers notificados.`);
         } catch (error) {
             console.error("[ERRO] Falha ao salvar streamers notificados:", error.message);
         }
@@ -153,24 +123,78 @@ class StreamerWatcher {
 
                 // Streamer está ao vivo
                 if (liveData) {
-                    // Verifica se já foi notificado
-                    if (!this.notifiedStreams.has(streamKey)) {
-                        console.log(`[INFO] ${streamer.name} entrou ao vivo!`);
+                    const now = new Date();
+                    const notifiedInfo = this.notifiedStreams.get(streamKey);
+                    
+                    // Se o streamer já está no registro
+                    if (notifiedInfo) {
+                        // Verifica se passaram 8 horas desde a última notificação
+                        const timeSinceLastNotification = now - new Date(notifiedInfo.lastNotified);
+                        const shouldNotify = timeSinceLastNotification >= 8 * 60 * 60 * 1000; // 8 horas em milissegundos
+                        
+                        if (shouldNotify) {
+                            console.log(`[INFO] ${streamer.name} está ao vivo há mais de 8 horas! Enviando nova notificação...`);
+                            await this.notifyChannel(streamer, liveData);
+                            await this.updateLiveRole(streamer.name, true);
+                            
+                            // Atualiza informações de notificação, mantendo lastOffline se existir
+                            const newNotifiedInfo = {
+                                ...notifiedInfo,
+                                lastNotified: now.toISOString(),
+                                notificationCount: (notifiedInfo.notificationCount || 0) + 1
+                            };
+                            this.notifiedStreams.set(streamKey, newNotifiedInfo);
+                            this.saveNotifiedStreams();
+                            
+                            console.log(`[INFO] Notificação enviada para ${streamer.name} (${newNotifiedInfo.notificationCount}ª vez)`);
+                        } else {
+                            const hoursAgo = (timeSinceLastNotification / (60 * 60 * 1000)).toFixed(1);
+                            console.log(`[INFO] ${streamer.name} continua ao vivo. Última notificação há ${hoursAgo} horas (${notifiedInfo.notificationCount} notificações).`);
+                        }
+                    } else {
+                        // Primeira vez que o streamer está online
+                        console.log(`[INFO] ${streamer.name} está ao vivo pela primeira vez! Enviando notificação...`);
                         await this.notifyChannel(streamer, liveData);
                         await this.updateLiveRole(streamer.name, true);
-                        this.notifiedStreams.add(streamKey);
-                        this.saveNotifiedStreams(); // Salva o estado após adicionar
-                    } else {
-                        console.log(`[INFO] ${streamer.name} continua ao vivo. Notificação já enviada anteriormente.`);
+                        
+                        // Cria informações de notificação
+                        const newNotifiedInfo = {
+                            lastNotified: now.toISOString(),
+                            notificationCount: 1
+                        };
+                        this.notifiedStreams.set(streamKey, newNotifiedInfo);
+                        this.saveNotifiedStreams();
+                        
+                        console.log(`[INFO] Notificação enviada para ${streamer.name} (primeira vez)`);
                     }
                 } 
                 // Streamer está offline
                 else {
                     if (this.notifiedStreams.has(streamKey)) {
+                        // Para Kick, faz uma segunda verificação para confirmar que está realmente offline
+                        if (streamer.type === "kick") {
+                            console.log(`[INFO] ${streamer.name} parece estar offline. Fazendo segunda verificação...`);
+                            // Espera 30 segundos antes da segunda verificação
+                            await new Promise(resolve => setTimeout(resolve, 30000));
+                            const secondCheck = await this.checkIfLive(streamer);
+                            
+                            if (secondCheck) {
+                                console.log(`[INFO] ${streamer.name} ainda está online (confirmado na segunda verificação).`);
+                                return; // Mantém o streamer na lista de notificados
+                            }
+                        }
+                        
                         console.log(`[INFO] ${streamer.name} saiu do ar.`);
                         await this.updateLiveRole(streamer.name, false);
-                        this.notifiedStreams.delete(streamKey);
-                        this.saveNotifiedStreams(); // Salva o estado após remover
+                        
+                        // Atualiza o registro com a data de offline, mas mantém o streamer no registro
+                        const notifiedInfo = this.notifiedStreams.get(streamKey);
+                        const updatedInfo = {
+                            ...notifiedInfo,
+                            lastOffline: new Date().toISOString()
+                        };
+                        this.notifiedStreams.set(streamKey, updatedInfo);
+                        this.saveNotifiedStreams(); // Salva o estado após atualizar
                     }
                 }
             } catch (error) {
@@ -230,137 +254,161 @@ class StreamerWatcher {
             const url = `https://kick.com/${username}`;
             console.log(`[INFO] Acessando página do streamer ${username} via Puppeteer: ${url}`);
 
-            // Reaproveita a aba se já existir
-            let page;
-            if (this.pages.has(username)) {
-                page = this.pages.get(username);
-                try {
-                    // tenta navegar na mesma aba
-                    await page.goto(url, { waitUntil: ['domcontentloaded', 'networkidle2'], timeout: 90000 });
-                } catch (err) {
-                    // se der erro, fecha e recria a aba
-                    try { await page.close(); } catch (_) {}
-                    this.pages.delete(username);
-                    page = null;
-                }
-            }
+            // Cria uma nova aba para cada verificação
+            const page = await this.browser.newPage();
+            
+            try {
+                // Configura a página
+                await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36");
+                await page.setViewport({ width: 1920, height: 1080 });
 
-            if (!page) {
-                page = await this.browser.newPage();
-                await this._setupPage(page);
-                this.pages.set(username, page);
-                await page.goto(url, { waitUntil: ['domcontentloaded', 'networkidle2'], timeout: 90000 });
-            }
+                // Configura timeout maior para carregar a página
+                await page.goto(url, { 
+                    waitUntil: ['domcontentloaded', 'networkidle2'], 
+                    timeout: 120000 // 2 minutos
+                });
 
-            // pequenas tentativas para dar tempo a conteúdo dinâmico
-            const attemptRun = async () => {
-                // espera curta (compatível com qualquer versão)
-                await new Promise(r => setTimeout(r, 1500));
+                // Espera 15 segundos para garantir que todo o conteúdo dinâmico seja carregado
+                console.log(`[INFO] Aguardando 60 segundos para verificar ${username}...`);
+                await new Promise(r => setTimeout(r, 60000));
 
-                // Executa no contexto da página várias verificações robustas
-                const liveInfo = await page.evaluate(() => {
-                    function isVisible(el) {
-                        if (!el) return false;
-                        const style = window.getComputedStyle(el);
-                        return style && style.display !== 'none' && style.visibility !== 'hidden' && el.offsetHeight > 0 && el.offsetWidth > 0;
-                    }
+                // pequenas tentativas para dar tempo a conteúdo dinâmico
+                const attemptRun = async () => {
+                    // espera curta (compatível com qualquer versão)
+                    await new Promise(r => setTimeout(r, 1500));
 
-                    // lista de seletores possíveis (varia conforme UI)
-                    const liveBadgeSelectors = [
-                        '[data-test-id="live-indicator"]', // comum
-                        '.channel-live-indicator', '.live-indicator', '.badge-live', '.status-live'
-                    ];
-                    const viewerSelectors = [
-                        '[data-test-id="viewer-count"]', '.viewer-count', '.live-count', '.watchers-count', '.channel-status__viewers'
-                    ];
-
-                    let foundLiveBadge = null;
-                    for (const s of liveBadgeSelectors) {
-                        const el = document.querySelector(s);
-                        if (el && isVisible(el) && /live|ao vivo|ao-vivo|ao_vivo/i.test((el.textContent || ''))) {
-                            foundLiveBadge = el;
-                            break;
+                    // Executa no contexto da página várias verificações robustas
+                    const liveInfo = await page.evaluate(() => {
+                        function isVisible(el) {
+                            if (!el) return false;
+                            const style = window.getComputedStyle(el);
+                            return style && style.display !== 'none' && style.visibility !== 'hidden' && el.offsetHeight > 0 && el.offsetWidth > 0;
                         }
-                    }
 
-                    let viewers = 0;
-                    for (const s of viewerSelectors) {
-                        const el = document.querySelector(s);
-                        if (el && isVisible(el)) {
-                            const txt = el.textContent || '';
-                            const n = parseInt(txt.replace(/\D/g, ''), 10);
-                            if (!Number.isNaN(n) && n > 0) {
-                                viewers = n;
+                        // lista de seletores possíveis (varia conforme UI)
+                        const liveBadgeSelectors = [
+                            '[data-test-id="live-indicator"]', // comum
+                            '.channel-live-indicator', '.live-indicator', '.badge-live', '.status-live'
+                        ];
+                        const viewerSelectors = [
+                            '[data-test-id="viewer-count"]', '.viewer-count', '.live-count', '.watchers-count', '.channel-status__viewers'
+                        ];
+
+                        let foundLiveBadge = null;
+                        for (const s of liveBadgeSelectors) {
+                            const el = document.querySelector(s);
+                            if (el && isVisible(el) && /live|ao vivo|ao-vivo|ao_vivo/i.test((el.textContent || ''))) {
+                                foundLiveBadge = el;
                                 break;
-                            } else {
-                                // se não encontrou número, tenta extrair qualquer dígito
-                                const m = txt.match(/(\d{1,3}(?:[.,]\d{3})*)/);
-                                if (m) {
-                                    viewers = parseInt(m[0].replace(/\D/g, ''), 10) || viewers;
+                            }
+                        }
+
+                        let viewers = 0;
+                        for (const s of viewerSelectors) {
+                            const el = document.querySelector(s);
+                            if (el && isVisible(el)) {
+                                const txt = el.textContent || '';
+                                const n = parseInt(txt.replace(/\D/g, ''), 10);
+                                if (!Number.isNaN(n) && n > 0) {
+                                    viewers = n;
+                                    break;
+                                } else {
+                                    // se não encontrou número, tenta extrair qualquer dígito
+                                    const m = txt.match(/(\d{1,3}(?:[.,]\d{3})*)/);
+                                    if (m) {
+                                        viewers = parseInt(m[0].replace(/\D/g, ''), 10) || viewers;
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    // verifica elemento video e se está tocando
-                    const video = document.querySelector('video');
-                    let playing = false;
-                    if (video) {
-                        try {
-                            playing = (video.readyState >= 2) && !video.paused;
-                        } catch (e) {
-                            // ignore cross-origin or properties not acessíveis
+                        // verifica elemento video e se está tocando
+                        const video = document.querySelector('video');
+                        let playing = false;
+                        if (video) {
+                            try {
+                                playing = (video.readyState >= 2) && !video.paused;
+                            } catch (e) {
+                                // ignore cross-origin or properties not acessíveis
+                            }
                         }
-                    }
 
-                    // fallback: procura textos "ao vivo", "live" ou "espectadores" no DOM
-                    let textHint = false;
-                    if (!foundLiveBadge && !viewers && !playing) {
-                        const allText = document.body.innerText.toLowerCase();
-                        if (allText.includes('ao vivo') || allText.includes('live') || allText.includes('espectadores') || allText.includes('viewers')) {
-                            textHint = true;
+                        // fallback: procura textos "ao vivo", "live" ou "espectadores" no DOM
+                        let textHint = false;
+                        if (!foundLiveBadge && !viewers && !playing) {
+                            const allText = document.body.innerText.toLowerCase();
+                            if (allText.includes('ao vivo') || allText.includes('live') || allText.includes('espectadores') || allText.includes('viewers')) {
+                                textHint = true;
+                            }
                         }
-                    }
 
-                    // Se qualquer verificação positiva, extrai meta info
-                    if (foundLiveBadge || viewers > 0 || playing || textHint) {
-                        const title = document.querySelector('h1')?.textContent?.trim() || document.title || 'Live na Kick';
-                        const thumbnail = (video && video.poster) || (document.querySelector('.channel-header img')?.src) || null;
-                        const category = document.querySelector('[data-test-id="category"]')?.textContent ||
-                                        document.querySelector('.channel-status__game-name')?.textContent ||
-                                        null;
-                        return {
-                            session_title: title,
-                            viewers: viewers || 0,
-                            category: category || 'Unknown',
-                            thumbnail
-                        };
-                    }
+                        // Se qualquer verificação positiva, extrai meta info
+                        if (foundLiveBadge || viewers > 0 || playing || textHint) {
+                            const title = document.querySelector('h1')?.textContent?.trim() || document.title || 'Live na Kick';
+                            const thumbnail = (video && video.poster) || (document.querySelector('.channel-header img')?.src) || null;
+                            const category = document.querySelector('[data-test-id="category"]')?.textContent ||
+                                            document.querySelector('.channel-status__game-name')?.textContent ||
+                                            null;
+                            return {
+                                session_title: title,
+                                viewers: viewers || 0,
+                                category: category || 'Unknown',
+                                thumbnail
+                            };
+                        }
 
+                        return null;
+                    });
+
+                    return liveInfo;
+                };
+
+                // tenta 3 vezes com delays progressivos para evitar falso negativo
+                let liveResult = await attemptRun();
+                let attempts = 1;
+                
+                while (!liveResult && attempts < 3) {
+                    console.log(`[INFO] Tentativa ${attempts + 1} de verificar ${username}...`);
+                    // Aumenta o tempo de espera a cada tentativa
+                    await new Promise(r => setTimeout(r, 3000 * attempts));
+                    liveResult = await attemptRun();
+                    attempts++;
+                }
+
+                if (!liveResult) {
+                    console.log(`[INFO] ${username} NÃO está ao vivo após ${attempts} tentativas.`);
+                    // Fecha a aba após a verificação
+                    await page.close();
                     return null;
-                });
+                }
 
-                return liveInfo;
-            };
-
-            // tenta 2 vezes com pequenos delays para evitar falso negativo
-            let liveResult = await attemptRun();
-            if (!liveResult) {
-                // tenta novamente depois de esperar um pouco mais
-                await new Promise(r => setTimeout(r, 2000));
-                liveResult = await attemptRun();
-            }
-
-            if (!liveResult) {
-                console.log(`[INFO] ${username} NÃO está ao vivo.`);
-                // não fecha a aba: reaproveitamos depois
+                console.log(`[INFO] ${username} está AO VIVO! Título: ${liveResult.session_title}, Viewers: ${liveResult.viewers}, Categoria: ${liveResult.category}`);
+                // Fecha a aba após a verificação
+                await page.close();
+                return liveResult;
+            } catch (error) {
+                console.error(`[ERRO] Falha ao verificar ${username} com Puppeteer:`, error.message);
+                // Garante que a aba seja fechada mesmo em caso de erro
+                try {
+                    await page.close();
+                } catch (closeErr) {
+                    console.error(`[ERRO] Falha ao fechar aba para ${username}:`, closeErr.message);
+                }
                 return null;
             }
-
-            console.log(`[INFO] ${username} está AO VIVO! Título: ${liveResult.session_title}, Viewers: ${liveResult.viewers}, Categoria: ${liveResult.category}`);
-            return liveResult;
         } catch (error) {
             console.error(`[ERRO] Falha ao verificar ${username} com Puppeteer:`, error.message);
+            // Em caso de erro grave, tenta limpar a aba para forçar recriação na próxima vez
+            if (this.pages.has(username)) {
+                try {
+                    const page = this.pages.get(username);
+                    await page.close();
+                    this.pages.delete(username);
+                    console.log(`[DEBUG] Aba removida para ${username} após erro grave`);
+                } catch (closeErr) {
+                    console.error(`[ERRO] Falha ao limpar aba com erro para ${username}:`, closeErr.message);
+                }
+            }
             return null;
         }
     }
@@ -507,7 +555,10 @@ class StreamerWatcher {
     }
 
     startWatching() {
+        // Inicia a verificação inicial
         this.checkStreamers().catch(console.error);
+        
+        // Configura verificação periódica
         setInterval(() => this.checkStreamers().catch(console.error), this.checkInterval);
     }
 }
