@@ -1,5 +1,20 @@
 {
   "streams": {
+    "twitch:claudiomadeiriti": {
+      "lastNotified": "2025-09-29T02:10:15.645Z",
+      "notificationCount": 1,
+      "lastOffline": "2025-09-29T03:35:59.583Z"
+    },
+    "twitch:japinha_yohanna": {
+      "lastNotified": "2025-09-29T02:58:58.454Z",
+      "notificationCount": 2,
+      "lastOffline": "2025-09-29T03:38:00.783Z"
+    },
+    "kick:pachequinh0": {
+      "lastNotified": "2025-09-29T03:58:59.248Z",
+      "notificationCount": 2,
+      "lastOffline": "2025-09-29T03:51:15.138Z"
+    }
   },
-  "lastUpdated": "2025-09-26T06:10:58.732Z"
+  "lastUpdated": "2025-09-29T03:59:03.821Z"
 }

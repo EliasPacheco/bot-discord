@@ -427,6 +427,15 @@ class StreamerWatcher {
                 config = JSON.parse(fs.readFileSync(configPath));
             }
 
+            // Verifica se o streamer está no arquivo notified_streams.json
+            const streamKey = `${streamerName.includes('twitch:') ? 'twitch' : 'kick'}:${streamerName}`;
+            const notifiedInfo = this.notifiedStreams.get(streamKey);
+            
+            // Se o streamer não estiver no arquivo ou tiver lastOffline, força isLive para false
+            if (!notifiedInfo || (notifiedInfo && notifiedInfo.lastOffline)) {
+                isLive = false;
+            }
+
             // Itera sobre todos os servidores que o bot está presente
             for (const [guildId, guild] of this.client.guilds.cache) {
                 // Verifica se há configuração para este servidor
