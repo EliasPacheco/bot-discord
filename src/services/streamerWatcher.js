@@ -128,12 +128,17 @@ class StreamerWatcher {
                     
                     // Se o streamer já está no registro
                     if (notifiedInfo) {
-                        // Verifica se passaram 8 horas desde a última notificação
+                        // Verifica se o streamer estava offline anteriormente e agora está online novamente
+                        const wasOffline = notifiedInfo.lastOffline && 
+                                          new Date(notifiedInfo.lastOffline) > new Date(notifiedInfo.lastNotified);
+                        
+                        // Verifica se passaram 8 horas desde a última notificação (apenas se não estava offline)
                         const timeSinceLastNotification = now - new Date(notifiedInfo.lastNotified);
-                        const shouldNotify = timeSinceLastNotification >= 8 * 60 * 60 * 1000; // 8 horas em milissegundos
+                        const timeThreshold = 8 * 60 * 60 * 1000; // 8 horas em milissegundos
+                        const shouldNotify = wasOffline || timeSinceLastNotification >= timeThreshold;
                         
                         if (shouldNotify) {
-                            console.log(`[INFO] ${streamer.name} está ao vivo há mais de 8 horas! Enviando nova notificação...`);
+                            console.log(`[INFO] ${streamer.name} está ao vivo${wasOffline ? ' novamente' : ' há mais de 8 horas'}! Enviando nova notificação...`);
                             await this.notifyChannel(streamer, liveData);
                             await this.updateLiveRole(streamer.name, true);
                             
