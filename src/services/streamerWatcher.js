@@ -419,87 +419,87 @@ class StreamerWatcher {
     }
 
     async updateLiveRole(streamerName, isLive) {
-            // Carrega as configurações dos servidores
-            const configPath = path.join(__dirname, "../data/server_config.json");
-            let config = { servers: {} };
+        // Carrega as configurações dos servidores
+        const configPath = path.join(__dirname, "../data/server_config.json");
+        let config = { servers: {} };
 
-            if (fs.existsSync(configPath)) {
-                config = JSON.parse(fs.readFileSync(configPath));
+        if (fs.existsSync(configPath)) {
+            config = JSON.parse(fs.readFileSync(configPath));
+        }
+
+        // Verifica o status no notified_streams
+        const streamKey = `${streamerName}`;
+        const notifiedInfo = this.notifiedStreams.get(streamKey);
+        
+        // Se o streamer não estiver no arquivo ou tiver lastOffline, força a remoção do cargo
+        if (!notifiedInfo || notifiedInfo.lastOffline) {
+            isLive = false;
+        }
+
+        // Itera sobre todos os servidores que o bot está presente
+        for (const [guildId, guild] of this.client.guilds.cache) {
+            // Verifica se há configuração para este servidor
+            if (
+                !config.servers[guildId] ||
+                !config.servers[guildId].streamerRoles
+            ) {
+                continue; // Pula se não houver configuração para este servidor
             }
 
-            // Verifica se o streamer está no arquivo notified_streams.json
-            const streamKey = `${streamerName.includes('twitch:') ? 'twitch' : 'kick'}:${streamerName}`;
-            const notifiedInfo = this.notifiedStreams.get(streamKey);
-            
-            // Se o streamer não estiver no arquivo ou tiver lastOffline, força isLive para false
-            if (!notifiedInfo || (notifiedInfo && notifiedInfo.lastOffline)) {
-                isLive = false;
+            // Verifica se há configuração para este streamer específico
+            if (!config.servers[guildId].streamerRoles[streamerName]) {
+                continue; // Pula se não houver configuração para este streamer
             }
 
-            // Itera sobre todos os servidores que o bot está presente
-            for (const [guildId, guild] of this.client.guilds.cache) {
-                // Verifica se há configuração para este servidor
-                if (
-                    !config.servers[guildId] ||
-                    !config.servers[guildId].streamerRoles
-                ) {
-                    continue; // Pula se não houver configuração para este servidor
-                }
+            try {
+                const streamerConfig =
+                    config.servers[guildId].streamerRoles[streamerName];
+                const userId = streamerConfig.userId;
+                const roleId = streamerConfig.roleId;
 
-                // Verifica se há configuração para este streamer específico
-                if (!config.servers[guildId].streamerRoles[streamerName]) {
-                    continue; // Pula se não houver configuração para este streamer
-                }
-
-                try {
-                    const streamerConfig =
-                        config.servers[guildId].streamerRoles[streamerName];
-                    const userId = streamerConfig.userId;
-                    const roleId = streamerConfig.roleId;
-
-                    // Busca o membro pelo ID
-                    const member = await guild.members
-                        .fetch(userId)
-                        .catch(() => null);
-                    if (!member) {
-                        console.log(
-                            `[ERRO] Usuário com ID ${userId} não encontrado no servidor ${guild.name}`,
-                        );
-                        continue;
-                    }
-
-                    const role = guild.roles.cache.get(roleId);
-                    if (!role) {
-                        console.log(
-                            `[ERRO] Cargo com ID ${roleId} não encontrado no servidor ${guild.name}`,
-                        );
-                        continue;
-                    }
-
-                    if (isLive) {
-                        // Adiciona o cargo se estiver ao vivo
-                        if (!member.roles.cache.has(roleId)) {
-                            await member.roles.add(role);
-                            console.log(
-                                `[INFO] Cargo ${role.name} adicionado para ${member.user.tag} no servidor ${guild.name} (streamer: ${streamerName})`,
-                            );
-                        }
-                    } else {
-                        // Remove o cargo se estiver offline
-                        if (member.roles.cache.has(roleId)) {
-                            await member.roles.remove(role);
-                            console.log(
-                                `[INFO] Cargo ${role.name} removido de ${member.user.tag} no servidor ${guild.name} (streamer: ${streamerName})`,
-                            );
-                        }
-                    }
-                } catch (error) {
+                // Busca o membro pelo ID
+                const member = await guild.members
+                    .fetch(userId)
+                    .catch(() => null);
+                if (!member) {
                     console.log(
-                        `[ERRO] Erro ao atualizar cargo no servidor ${guild.name}: ${error.message}`,
+                        `[ERRO] Usuário com ID ${userId} não encontrado no servidor ${guild.name}`,
                     );
+                    continue;
                 }
+
+                const role = guild.roles.cache.get(roleId);
+                if (!role) {
+                    console.log(
+                        `[ERRO] Cargo com ID ${roleId} não encontrado no servidor ${guild.name}`,
+                    );
+                    continue;
+                }
+
+                if (isLive) {
+                    // Adiciona o cargo se estiver ao vivo
+                    if (!member.roles.cache.has(roleId)) {
+                        await member.roles.add(role);
+                        console.log(
+                            `[INFO] Cargo ${role.name} adicionado para ${member.user.tag} no servidor ${guild.name} (streamer: ${streamerName})`,
+                        );
+                    }
+                } else {
+                    // Remove o cargo se estiver offline
+                    if (member.roles.cache.has(roleId)) {
+                        await member.roles.remove(role);
+                        console.log(
+                            `[INFO] Cargo ${role.name} removido de ${member.user.tag} no servidor ${guild.name} (streamer: ${streamerName})`,
+                        );
+                    }
+                }
+            } catch (error) {
+                console.log(
+                    `[ERRO] Erro ao atualizar cargo no servidor ${guild.name}: ${error.message}`,
+                );
             }
         }
+    }
 
     async notifyChannel(streamer, liveData) {
         const channelIds = this.getChannelIds();
