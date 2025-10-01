@@ -1,5 +1,10 @@
 {
   "streams": {
+    "kick:doiska-rj": {
+      "lastNotified": "2025-10-01T05:51:22.374Z",
+      "notificationCount": 2,
+      "lastOffline": "2025-10-01T05:58:51.948Z"
+    }
   },
-  "lastUpdated": "2025-10-01T03:45:19.309Z"
+  "lastUpdated": "2025-10-01T05:58:51.948Z"
 }

@@ -132,28 +132,27 @@ class StreamerWatcher {
                         const wasOffline = notifiedInfo.lastOffline && 
                                           new Date(notifiedInfo.lastOffline) > new Date(notifiedInfo.lastNotified);
                         
-                        // Verifica se passaram 8 horas desde a última notificação (apenas se não estava offline)
+                        // Para streamers do Kick, verifica se passaram 8 horas desde a última notificação
                         const timeSinceLastNotification = now - new Date(notifiedInfo.lastNotified);
-                        const timeThreshold = 8 * 60 * 60 * 1000; // 8 horas em milissegundos
-                        const shouldNotify = wasOffline || timeSinceLastNotification >= timeThreshold;
+                        const hoursAgo = Math.floor(timeSinceLastNotification / (1000 * 60 * 60));
                         
-                        if (shouldNotify) {
-                            console.log(`[INFO] ${streamer.name} está ao vivo${wasOffline ? ' novamente' : ' há mais de 8 horas'}! Enviando nova notificação...`);
+                        // Se for Twitch, notifica sempre que estiver online
+                        // Se for Kick, notifica apenas se passou 8 horas ou se estava offline
+                        if (streamer.type === "twitch" || wasOffline || hoursAgo >= 8) {
+                            console.log(`[INFO] Enviando notificação para ${streamer.name}...`);
                             await this.notifyChannel(streamer, liveData);
                             await this.updateLiveRole(streamer.name, true);
                             
-                            // Atualiza informações de notificação, mantendo lastOffline se existir
-                            const newNotifiedInfo = {
-                                ...notifiedInfo,
+                            // Atualiza informações de notificação
+                            const updatedInfo = {
                                 lastNotified: now.toISOString(),
                                 notificationCount: (notifiedInfo.notificationCount || 0) + 1
                             };
-                            this.notifiedStreams.set(streamKey, newNotifiedInfo);
+                            this.notifiedStreams.set(streamKey, updatedInfo);
                             this.saveNotifiedStreams();
                             
-                            console.log(`[INFO] Notificação enviada para ${streamer.name} (${newNotifiedInfo.notificationCount}ª vez)`);
+                            console.log(`[INFO] Notificação enviada para ${streamer.name} (${updatedInfo.notificationCount}ª vez)`);
                         } else {
-                            const hoursAgo = (timeSinceLastNotification / (60 * 60 * 1000)).toFixed(1);
                             console.log(`[INFO] ${streamer.name} continua ao vivo. Última notificação há ${hoursAgo} horas (${notifiedInfo.notificationCount} notificações).`);
                         }
                     } else {
