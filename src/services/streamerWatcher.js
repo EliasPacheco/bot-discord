@@ -128,18 +128,13 @@ class StreamerWatcher {
                     
                     // Se o streamer já está no registro
                     if (notifiedInfo) {
-                        // Verifica se o streamer estava offline anteriormente e agora está online novamente
-                        const wasOffline = notifiedInfo.lastOffline && 
-                                          new Date(notifiedInfo.lastOffline) > new Date(notifiedInfo.lastNotified);
-                        
-                        // Para streamers do Kick, verifica se passaram 8 horas desde a última notificação
+                        // Verifica se passaram 8 horas desde a última notificação
                         const timeSinceLastNotification = now - new Date(notifiedInfo.lastNotified);
                         const hoursAgo = Math.floor(timeSinceLastNotification / (1000 * 60 * 60));
                         
-                        // Se for Twitch, notifica sempre que estiver online
-                        // Se for Kick, notifica apenas se passou 8 horas ou se estava offline
-                        if (streamer.type === "twitch" || wasOffline || hoursAgo >= 8) {
-                            console.log(`[INFO] Enviando notificação para ${streamer.name}...`);
+                        // Notifica apenas se passou 8 horas desde a última notificação
+                        if (hoursAgo >= 8) {
+                            console.log(`[INFO] Enviando notificação para ${streamer.name} (passou ${hoursAgo} horas desde a última notificação)...`);
                             await this.notifyChannel(streamer, liveData);
                             await this.updateLiveRole(streamer.name, true);
                             
@@ -153,7 +148,7 @@ class StreamerWatcher {
                             
                             console.log(`[INFO] Notificação enviada para ${streamer.name} (${updatedInfo.notificationCount}ª vez)`);
                         } else {
-                            console.log(`[INFO] ${streamer.name} continua ao vivo. Última notificação há ${hoursAgo} horas (${notifiedInfo.notificationCount} notificações).`);
+                            console.log(`[INFO] ${streamer.name} está ao vivo, mas a última notificação foi há apenas ${hoursAgo} horas. Aguardando completar 8 horas.`);
                         }
                     } else {
                         // Primeira vez que o streamer está online
