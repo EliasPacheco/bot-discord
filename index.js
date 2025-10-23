@@ -101,7 +101,7 @@ client.on("interactionCreate", async (interaction) => {
             date: getCurrentDate(),
             participants: participants,
             status: "Em andamento",
-            creator: interaction.member.displayName // Usando o nickname do servidor ao invés do tag global
+            creator: interaction.member.displayName
         };
 
         saveAction(action);
@@ -150,35 +150,38 @@ client.on("interactionCreate", async (interaction) => {
                 break;
 
             case "victory":
-                const participantButtons = new ActionRowBuilder();
-                actionData.participants.forEach((participant, index) => {
-                    participantButtons.addComponents(
-                        new ButtonBuilder()
-                            .setCustomId(`select_${id}_${index}`)
-                            .setLabel(participant)
-                            .setStyle(ButtonStyle.Secondary)
-                    );
-                });
-
-                const confirmButton = new ButtonBuilder()
-                    .setCustomId(`confirm_${id}`)
-                    .setLabel("Confirmar Seleção")
-                    .setStyle(ButtonStyle.Success);
-
-                const buttonRow = new ActionRowBuilder().addComponents(confirmButton);
-
-                // Inicializa a lista de participantes selecionados no objeto da ação
-                if (!data.actions) data.actions = [];
                 const actionIndex = data.actions.findIndex(a => a.id === id);
                 if (actionIndex !== -1) {
                     data.actions[actionIndex].selectedParticipants = [];
                     fs.writeFileSync(actionsPath, JSON.stringify(data, null, 2));
                 }
 
+                // Cria os botões dividindo em linhas de até 5
+                const participantRows = [];
+                for (let i = 0; i < actionData.participants.length; i += 5) {
+                    const row = new ActionRowBuilder();
+                    actionData.participants.slice(i, i + 5).forEach((participant, j) => {
+                        row.addComponents(
+                            new ButtonBuilder()
+                                .setCustomId(`select_${id}_${i + j}`)
+                                .setLabel(participant)
+                                .setStyle(ButtonStyle.Secondary)
+                        );
+                    });
+                    participantRows.push(row);
+                }
+
+                const confirmButton = new ButtonBuilder()
+                    .setCustomId(`confirm_${id}`)
+                    .setLabel("Confirmar Seleção")
+                    .setStyle(ButtonStyle.Success);
+
+                const confirmRow = new ActionRowBuilder().addComponents(confirmButton);
+
                 await interaction.update({ 
                     content: "Selecione os participantes que receberão a recompensa:",
-                    components: [participantButtons, buttonRow],
-                    embeds: [] 
+                    components: [...participantRows, confirmRow],
+                    embeds: []
                 });
                 break;
         }
@@ -202,30 +205,29 @@ client.on("interactionCreate", async (interaction) => {
             actionData.selectedParticipants = [];
         }
 
-        // Recria os botões com os estados atualizados
-        const participantButtons = new ActionRowBuilder();
-        actionData.participants.forEach((p, i) => {
-            const isSelected = actionData.selectedParticipants.includes(p);
-            const willBeSelected = i === parseInt(index) && !isSelected;
-            const willBeDeselected = i === parseInt(index) && isSelected;
-
-            participantButtons.addComponents(
-                new ButtonBuilder()
-                    .setCustomId(`select_${id}_${i}`)
-                    .setLabel(p)
-                    .setStyle(
-                        (isSelected && !willBeDeselected) || willBeSelected
-                            ? ButtonStyle.Primary
-                            : ButtonStyle.Secondary
-                    )
-            );
-        });
-
-        // Atualiza a lista de participantes selecionados
+        // Atualiza seleção
         if (actionData.selectedParticipants.includes(participant)) {
             actionData.selectedParticipants = actionData.selectedParticipants.filter(p => p !== participant);
         } else {
             actionData.selectedParticipants.push(participant);
+        }
+
+        // 🔥 Recria os botões divididos em linhas de até 5
+        const participantRows = [];
+        for (let i = 0; i < actionData.participants.length; i += 5) {
+            const row = new ActionRowBuilder();
+            actionData.participants.slice(i, i + 5).forEach((p, j) => {
+                const absoluteIndex = i + j;
+                const isSelected = actionData.selectedParticipants.includes(p);
+
+                row.addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`select_${id}_${absoluteIndex}`)
+                        .setLabel(p)
+                        .setStyle(isSelected ? ButtonStyle.Primary : ButtonStyle.Secondary)
+                );
+            });
+            participantRows.push(row);
         }
 
         const confirmButton = new ButtonBuilder()
@@ -233,12 +235,14 @@ client.on("interactionCreate", async (interaction) => {
             .setLabel("Confirmar Seleção")
             .setStyle(ButtonStyle.Success);
 
-        const buttonRow = new ActionRowBuilder().addComponents(confirmButton);
+        const confirmRow = new ActionRowBuilder().addComponents(confirmButton);
 
         fs.writeFileSync(actionsPath, JSON.stringify(data, null, 2));
-        await interaction.update({ 
+
+        await interaction.update({
             content: "Selecione os participantes que receberão a recompensa:",
-            components: [participantButtons, buttonRow] 
+            components: [...participantRows, confirmRow],
+            embeds: []
         });
     }
 
