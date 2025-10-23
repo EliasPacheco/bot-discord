@@ -1,7 +1,7 @@
 {
-  "name": "mld-live",
+  "name": "pacheco-lindo",
   "version": "1.0.0",
-  "description": "",
+  "description": "Discord bot for registering and managing actions",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -12,10 +12,6 @@
   "license": "ISC",
   "dependencies": {
     "discord.js": "^14.14.1",
-    "dotenv": "^16.4.5",
-    "express": "^4.18.3",
-    "node-fetch": "^2.7.0",
-    "puppeteer": "^22.15.0",
-    "puppeteer-core": "^22.15.0"
+    "dotenv": "^16.4.5"
   }
 }

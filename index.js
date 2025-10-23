@@ -6,17 +6,12 @@ const {
     ButtonBuilder,
     ButtonStyle,
     EmbedBuilder,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle,
 } = require("discord.js");
 const fs = require("fs");
 const path = require("path");
-const express = require('express');
-const { handleAdicionarkick } = require("./src/commands/adicionarkick");
-const { handleAdicionartwitch } = require("./src/commands/adicionartwitch");
-const StreamerWatcher = require("./src/services/streamerWatcher");
-
-process.on('unhandledRejection', (reason, promise) => {
-    console.log('[WARN] Rejeição de promessa não tratada:', reason);
-});
 
 const client = new Client({
     intents: [
@@ -25,259 +20,298 @@ const client = new Client({
         GatewayIntentBits.MessageContent,
     ],
 });
-const PREFIX = "/";
+
+// Tratamento de erros não capturados
+process.on('unhandledRejection', (reason, promise) => {
+    console.log('[WARN] Rejeição de promessa não tratada:', reason);
+});
 
 client.once("ready", () => {
-    console.log(`Logged in as ${client.user.tag}!`);
-    const watcher = new StreamerWatcher(client);
-    watcher.startWatching();
+    console.log(`Bot logado como ${client.user.tag}!`);
 });
 
-client.on("messageCreate", async (message) => {
-    if (!message.content.startsWith(PREFIX) || message.author.bot) return;
+// Função para obter a data atual no formato DD/MM
+function getCurrentDate() {
+    const date = new Date();
+    return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
 
-    const args = message.content.slice(PREFIX.length).trim().split(/ +/);
-    const command = args.shift().toLowerCase();
-
-    if (command === "adicionarkick") {
-        await handleAdicionarkick(message, args);
-    } else if (command === "adicionartwitch") {
-        await handleAdicionartwitch(message, args);
+// Função para salvar ação no JSON
+function saveAction(action) {
+    const actionsPath = path.join(__dirname, "./src/data/actions.json");
+    let data = { actions: [] };
+    
+    if (fs.existsSync(actionsPath)) {
+        data = JSON.parse(fs.readFileSync(actionsPath));
     }
-});
+    
+    data.actions.push(action);
+    fs.writeFileSync(actionsPath, JSON.stringify(data, null, 2));
+}
+
+// Função para criar embed da ação
+function createActionEmbed(action) {
+    return new EmbedBuilder()
+        .setTitle(`Ação: ${action.name}`)
+        .setDescription(`**Status:** ${action.status || 'Em andamento'}`)
+        .addFields(
+            { name: "Data", value: action.date, inline: true },
+            { name: "Responsável", value: action.creator, inline: true },
+            { name: "Participantes", value: action.participants.join(", "), inline: true }
+        )
+        .setColor("#0099ff")
+        .setTimestamp();
+}
 
 client.on("interactionCreate", async (interaction) => {
-    // Autocomplete unificado para todos os comandos com autocomplete
-    if (interaction.isAutocomplete()) {
-        const focusedValue = interaction.options.getFocused() ?? '';
-        const streamersFilePath = path.join(__dirname, './src/data/streamers.json');
-        const notificacaoPath = path.join(__dirname, './src/data/notificacao.json');
+    if (interaction.isCommand() && interaction.commandName === "acao") {
+        const modal = new ModalBuilder()
+            .setCustomId("action-modal")
+            .setTitle("Registro de Ação");
 
-        // Carregar streamers
-        let streamers = [];
-        if (fs.existsSync(streamersFilePath)) {
-            const data = JSON.parse(fs.readFileSync(streamersFilePath));
-            streamers = Array.isArray(data.streamers) ? data.streamers : [];
-        }
+        const actionNameInput = new TextInputBuilder()
+            .setCustomId("actionName")
+            .setLabel("Nome da Ação")
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true);
 
-        let choices = [];
-        if (interaction.commandName === 'testetwitch' || interaction.commandName === 'removertwitch') {
-            choices = streamers
-                .filter(s => s.type === 'twitch' && s.name.toLowerCase().includes(focusedValue.toLowerCase()))
-                .map(s => ({ name: s.name, value: s.name }));
-        } else if (interaction.commandName === 'testekick' || interaction.commandName === 'removerkick') {
-            choices = streamers
-                .filter(s => s.type === 'kick' && s.name.toLowerCase().includes(focusedValue.toLowerCase()))
-                .map(s => ({ name: s.name, value: s.name }));
-        } else if (interaction.commandName === 'removercanal') {
-            // Carregar canais de notificação
-            let canais = [];
-            if (fs.existsSync(notificacaoPath)) {
-                const notif = JSON.parse(fs.readFileSync(notificacaoPath));
-                if (Array.isArray(notif.canais)) canais = notif.canais;
-                else if (notif.canalId) canais = [notif.canalId]; // migração de formato antigo
-            }
-            choices = canais
-                .filter(id => id && id.toString().includes(focusedValue))
-                .map(id => {
-                    const ch = interaction.guild?.channels?.cache?.get(id);
-                    const name = ch ? `#${ch.name}` : `Canal ${id}`;
-                    return { name: `${name} (${id})`, value: id };
-                });
-        } else if (interaction.commandName === 'escolhercargo') {
-            // Retorna todos os streamers para seleção
-            choices = streamers
-                .filter(s => s.name.toLowerCase().includes(focusedValue.toLowerCase()))
-                .map(s => ({ name: `${s.name} (${s.type})`, value: s.name }));
-        }
-        await interaction.respond(choices.slice(0, 25));
-        return;
+        const participantsInput = new TextInputBuilder()
+            .setCustomId("participants")
+            .setLabel("Participantes (separados por vírgula)")
+            .setStyle(TextInputStyle.Paragraph)
+            .setRequired(true);
+
+        const firstRow = new ActionRowBuilder().addComponents(actionNameInput);
+        const secondRow = new ActionRowBuilder().addComponents(participantsInput);
+
+        modal.addComponents(firstRow, secondRow);
+        await interaction.showModal(modal);
     }
 
-    if (!interaction.isCommand()) return;
+    if (interaction.isModalSubmit() && interaction.customId === "action-modal") {
+        const actionName = interaction.fields.getTextInputValue("actionName");
+        const participants = interaction.fields.getTextInputValue("participants")
+            .split(",")
+            .map(p => p.trim())
+            .filter(p => p);
 
-    const { commandName, options } = interaction;
-
-    if (commandName === "escolhercargo") {
-        const streamerName = options.getString("streamer");
-        const cargo = options.getRole("cargo");
-        const usuario = options.getUser("usuario");
-        const serverId = interaction.guildId;
-
-        const configPath = path.join(__dirname, "./src/data/server_config.json");
-        let config = { servers: {} };
-
-        if (fs.existsSync(configPath)) {
-            try {
-                config = JSON.parse(fs.readFileSync(configPath));
-            } catch {
-                config = { servers: {} };
-            }
-        }
-
-        if (!config.servers[serverId]) {
-            config.servers[serverId] = { streamerRoles: {} };
-        }
-
-        config.servers[serverId].streamerRoles[streamerName] = {
-            userId: usuario.id,
-            roleId: cargo.id
+        const action = {
+            id: Date.now().toString(),
+            name: actionName,
+            date: getCurrentDate(),
+            participants: participants,
+            status: "Em andamento",
+            creator: interaction.member.displayName // Usando o nickname do servidor ao invés do tag global
         };
 
-        fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+        saveAction(action);
 
-        await interaction.reply(
-            `✅ Cargo ${cargo.name} configurado para ${usuario.tag} quando o streamer **${streamerName}** estiver ao vivo!`
-        );
-    }
-
-    if (commandName === "adicionar") {
-        const plataforma = options.getString("plataforma");
-        const nome = options.getString("nome");
-        const streamer = { type: plataforma, name: nome };
-
-        // Carrega e salva igual ao seu comando antigo
-        const fs = require("fs");
-        const path = require("path");
-        const streamersFilePath = path.join(
-            __dirname,
-            "./src/data/streamers.json",
-        );
-        let data = { streamers: [] };
-        if (fs.existsSync(streamersFilePath)) {
-            data = JSON.parse(fs.readFileSync(streamersFilePath));
-            if (!Array.isArray(data.streamers)) data.streamers = [];
-        }
-        data.streamers.push(streamer);
-        fs.writeFileSync(streamersFilePath, JSON.stringify(data, null, 2));
-        await interaction.reply(
-            `Streamer ${nome} adicionado na plataforma ${plataforma}!`,
-        );
-    }
-
-    if (commandName === "removertwitch" || commandName === "removerkick") {
-        const nome = options.getString("nome");
-        const plataforma = commandName === "removertwitch" ? "twitch" : "kick";
-
-        const fs = require("fs");
-        const path = require("path");
-        const streamersFilePath = path.join(
-            __dirname,
-            "./src/data/streamers.json",
-        );
-        let data = { streamers: [] };
-        if (fs.existsSync(streamersFilePath)) {
-            data = JSON.parse(fs.readFileSync(streamersFilePath));
-            if (!Array.isArray(data.streamers)) data.streamers = [];
-        }
-        const originalLength = data.streamers.length;
-        data.streamers = data.streamers.filter(
-            (s) => !(s.type === plataforma && s.name === nome),
-        );
-        fs.writeFileSync(streamersFilePath, JSON.stringify(data, null, 2));
-        if (data.streamers.length < originalLength) {
-            await interaction.reply(
-                `Streamer ${nome} removido da plataforma ${plataforma}!`,
-            );
-        } else {
-            await interaction.reply(
-                `Streamer ${nome} não encontrado na plataforma ${plataforma}.`,
-            );
-        }
-    }
-
-    if (commandName === "testetwitch" || commandName === "testekick") {
-        const nome = options.getString("nome");
-        const plataforma = commandName === "testetwitch" ? "twitch" : "kick";
-        let url = "";
-        let thumb = "";
-        let embedTitle = "";
-        let embedColor = 0x9146ff; // Roxo Twitch
-
-        if (plataforma === "twitch") {
-            url = `https://twitch.tv/${nome}`;
-            // Thumbnail padrão da Twitch (pode customizar se quiser buscar ao vivo)
-            thumb = `https://static-cdn.jtvnw.net/previews-ttv/live_user_${nome}.jpg?width=320&height=180`;
-            embedTitle = `Twitch: ${nome}`;
-        } else {
-            url = `https://kick.com/${nome}`;
-            // Kick não tem thumbnail pública, usar avatar ou imagem padrão
-            thumb = `https://files.kick.com/user/default-avatar.jpg`; // Ou personalize se souber o avatar
-            embedTitle = `Kick: ${nome}`;
-            embedColor = 0x53fc18; // Verde Kick
-        }
-
-        const embed = new EmbedBuilder()
-            .setTitle(embedTitle)
-            .setDescription(`O ${nome} está ao vivo! @everyone`)
-            .setURL(url)
-            .setColor(embedColor)
-            .setImage(thumb);
-
-        const row = new ActionRowBuilder().addComponents(
+        const embed = createActionEmbed(action);
+        const buttons = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
-                .setLabel("Acessar")
-                .setStyle(ButtonStyle.Link)
-                .setURL(url),
+                .setCustomId(`cancel_${action.id}`)
+                .setLabel("Cancelar")
+                .setStyle(ButtonStyle.Danger),
+            new ButtonBuilder()
+                .setCustomId(`victory_${action.id}`)
+                .setLabel("Vitória")
+                .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
+                .setCustomId(`defeat_${action.id}`)
+                .setLabel("Derrota")
+                .setStyle(ButtonStyle.Secondary)
         );
 
-        await interaction.reply({
-            embeds: [embed],
-            components: [row],
+        await interaction.reply({ embeds: [embed], components: [buttons] });
+    }
+
+    if (interaction.isButton()) {
+        const [action, id] = interaction.customId.split("_");
+        const actionsPath = path.join(__dirname, "./src/data/actions.json");
+        const data = JSON.parse(fs.readFileSync(actionsPath));
+        const actionData = data.actions.find(a => a.id === id);
+
+        if (!actionData) {
+            await interaction.reply({ content: "Ação não encontrada!", ephemeral: true });
+            return;
+        }
+
+        switch (action) {
+            case "cancel":
+                actionData.status = "Cancelada";
+                const cancelEmbed = createActionEmbed(actionData);
+                await interaction.update({ embeds: [cancelEmbed], components: [] });
+                break;
+
+            case "defeat":
+                actionData.status = "Derrota";
+                const defeatEmbed = createActionEmbed(actionData);
+                await interaction.update({ embeds: [defeatEmbed], components: [] });
+                break;
+
+            case "victory":
+                const participantButtons = new ActionRowBuilder();
+                actionData.participants.forEach((participant, index) => {
+                    participantButtons.addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`select_${id}_${index}`)
+                            .setLabel(participant)
+                            .setStyle(ButtonStyle.Secondary)
+                    );
+                });
+
+                const confirmButton = new ButtonBuilder()
+                    .setCustomId(`confirm_${id}`)
+                    .setLabel("Confirmar Seleção")
+                    .setStyle(ButtonStyle.Success);
+
+                const buttonRow = new ActionRowBuilder().addComponents(confirmButton);
+
+                // Inicializa a lista de participantes selecionados no objeto da ação
+                if (!data.actions) data.actions = [];
+                const actionIndex = data.actions.findIndex(a => a.id === id);
+                if (actionIndex !== -1) {
+                    data.actions[actionIndex].selectedParticipants = [];
+                    fs.writeFileSync(actionsPath, JSON.stringify(data, null, 2));
+                }
+
+                await interaction.update({ 
+                    content: "Selecione os participantes que receberão a recompensa:",
+                    components: [participantButtons, buttonRow],
+                    embeds: [] 
+                });
+                break;
+        }
+
+        fs.writeFileSync(actionsPath, JSON.stringify(data, null, 2));
+    }
+
+    if (interaction.isButton() && interaction.customId.startsWith('select_')) {
+        const [_, id, index] = interaction.customId.split('_');
+        const actionsPath = path.join(__dirname, "./src/data/actions.json");
+        const data = JSON.parse(fs.readFileSync(actionsPath));
+        const actionData = data.actions.find(a => a.id === id);
+
+        if (!actionData) {
+            await interaction.reply({ content: "Ação não encontrada!", ephemeral: true });
+            return;
+        }
+
+        const participant = actionData.participants[parseInt(index)];
+        if (!actionData.selectedParticipants) {
+            actionData.selectedParticipants = [];
+        }
+
+        // Recria os botões com os estados atualizados
+        const participantButtons = new ActionRowBuilder();
+        actionData.participants.forEach((p, i) => {
+            const isSelected = actionData.selectedParticipants.includes(p);
+            const willBeSelected = i === parseInt(index) && !isSelected;
+            const willBeDeselected = i === parseInt(index) && isSelected;
+
+            participantButtons.addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`select_${id}_${i}`)
+                    .setLabel(p)
+                    .setStyle(
+                        (isSelected && !willBeDeselected) || willBeSelected
+                            ? ButtonStyle.Primary
+                            : ButtonStyle.Secondary
+                    )
+            );
+        });
+
+        // Atualiza a lista de participantes selecionados
+        if (actionData.selectedParticipants.includes(participant)) {
+            actionData.selectedParticipants = actionData.selectedParticipants.filter(p => p !== participant);
+        } else {
+            actionData.selectedParticipants.push(participant);
+        }
+
+        const confirmButton = new ButtonBuilder()
+            .setCustomId(`confirm_${id}`)
+            .setLabel("Confirmar Seleção")
+            .setStyle(ButtonStyle.Success);
+
+        const buttonRow = new ActionRowBuilder().addComponents(confirmButton);
+
+        fs.writeFileSync(actionsPath, JSON.stringify(data, null, 2));
+        await interaction.update({ 
+            content: "Selecione os participantes que receberão a recompensa:",
+            components: [participantButtons, buttonRow] 
         });
     }
 
-    if (commandName === "escolhercanal") {
-        const canal = options.getChannel('canal');
-        if (!canal || canal.type !== 0) { // 0 = GUILD_TEXT
-            await interaction.reply({ content: 'Escolha um canal de texto válido!', ephemeral: true });
+    if (interaction.isButton() && interaction.customId.startsWith('confirm_')) {
+        const [_, id] = interaction.customId.split('_');
+        const actionsPath = path.join(__dirname, "./src/data/actions.json");
+        const data = JSON.parse(fs.readFileSync(actionsPath));
+        const actionData = data.actions.find(a => a.id === id);
+
+        if (!actionData || !actionData.selectedParticipants || actionData.selectedParticipants.length === 0) {
+            await interaction.reply({ content: "Por favor, selecione pelo menos um participante!", ephemeral: true });
             return;
         }
-        const notificacaoPath = path.join(__dirname, './src/data/notificacao.json');
-        let data = {};
-        if (fs.existsSync(notificacaoPath)) {
-            try { data = JSON.parse(fs.readFileSync(notificacaoPath)); } catch { data = {}; }
-        }
-        // Migrar formato antigo { canalId } para { canais: [] }
-        let canais = [];
-        if (Array.isArray(data.canais)) canais = data.canais;
-        else if (data.canalId) canais = [data.canalId];
 
-        if (!canais.includes(canal.id)) canais.push(canal.id);
-        fs.writeFileSync(notificacaoPath, JSON.stringify({ canais }, null, 2));
-        await interaction.reply(`Canal de notificações adicionado: <#${canal.id}>. Total de canais: ${canais.length}`);
+        const rewardModal = new ModalBuilder()
+            .setCustomId(`reward_${id}`)
+            .setTitle("Valor da Recompensa");
+
+        const rewardInput = new TextInputBuilder()
+            .setCustomId("rewardValue")
+            .setLabel("Valor total (ex: 1000 para 1k)")
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true);
+
+        const rewardRow = new ActionRowBuilder().addComponents(rewardInput);
+        rewardModal.addComponents(rewardRow);
+
+        await interaction.showModal(rewardModal);
     }
 
-    if (commandName === "removercanal") {
-        const canalId = options.getString('canal');
-        const notificacaoPath = path.join(__dirname, './src/data/notificacao.json');
-        let data = {};
-        if (fs.existsSync(notificacaoPath)) {
-            try { data = JSON.parse(fs.readFileSync(notificacaoPath)); } catch { data = {}; }
-        }
-        let canais = [];
-        if (Array.isArray(data.canais)) canais = data.canais;
-        else if (data.canalId) canais = [data.canalId];
+    if (interaction.isModalSubmit() && interaction.customId.startsWith("reward_")) {
+        const id = interaction.customId.split("_")[1];
+        const rewardValue = parseInt(interaction.fields.getTextInputValue("rewardValue"));
 
-        const before = canais.length;
-        canais = canais.filter(id => id !== canalId);
-        fs.writeFileSync(notificacaoPath, JSON.stringify({ canais }, null, 2));
-        if (canais.length < before) {
-            await interaction.reply(`Canal removido: ${canalId}. Restantes: ${canais.length}`);
-        } else {
-            await interaction.reply({ content: `Canal não encontrado: ${canalId}`, ephemeral: true });
+        const actionsPath = path.join(__dirname, "./src/data/actions.json");
+        const data = JSON.parse(fs.readFileSync(actionsPath));
+        const actionData = data.actions.find(a => a.id === id);
+
+        if (!actionData) {
+            await interaction.reply({ content: "Ação não encontrada!", ephemeral: true });
+            return;
         }
+
+        const participantCount = actionData.selectedParticipants.length;
+        const shareValue = Math.floor(rewardValue / participantCount);
+
+        actionData.status = "Vitória";
+        actionData.reward = {
+            total: rewardValue,
+            perParticipant: shareValue,
+            participants: actionData.selectedParticipants
+        };
+
+        const victoryEmbed = new EmbedBuilder()
+            .setTitle(`Ação: ${actionData.name}`)
+            .setDescription(`**Status:** Vitória`)
+            .addFields(
+                { name: "Data", value: actionData.date, inline: true },
+                { name: "Responsável", value: actionData.creator, inline: true },
+                { name: "Recompensa Total", value: `${rewardValue.toLocaleString()}k`, inline: true },
+                { name: "Participantes", value: actionData.participants.map(p => 
+                    actionData.selectedParticipants.includes(p) ? 
+                    `${p}: ${shareValue.toLocaleString()}k` : 
+                    p
+                ).join("\n")
+                }
+            )
+            .setColor("#00FF00")
+            .setTimestamp();
+
+        fs.writeFileSync(actionsPath, JSON.stringify(data, null, 2));
+        await interaction.update({ embeds: [victoryEmbed], components: [], content: null });
     }
 });
-
-// Configuração do servidor Express
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-// Rota de ping para manter o bot online
-app.get('/', (req, res) => res.send('Bot online!'));
-
-// Inicia servidor web
-app.listen(PORT, () => console.log(`Servidor web rodando na porta ${PORT}`));
 
 client.login(process.env.DISCORD_BOT_TOKEN);

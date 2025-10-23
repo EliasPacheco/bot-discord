@@ -1,68 +1,65 @@
-# Discord Bot for Streamer Notifications
+# Bot de Registro de Ações
 
-This project is a Discord bot that allows users to add Twitch streamers and kick streamers to a watchlist. When a streamer goes live, the bot sends a notification to a specified Discord channel.
+Este bot do Discord permite registrar e gerenciar ações com participantes, incluindo distribuição de recompensas.
 
-## Features
+## Funcionalidades
 
-- Add Twitch streamers using the command `/adicionartwitch <streamer_name_or_url>`.
-- Add Kick streamers using the command `/adicionarkick <streamer_name>`.
-- Automatically checks the status of the added streamers and notifies the channel when they go live.
-- Configure roles per server for each Discord user using `/escolhercargo <cargo> <usuario>` - the bot will automatically assign/remove the role when the user goes live/offline.
+- Registro de ações com nome e participantes
+- Data automática no formato DD/MM
+- Status da ação (Em andamento, Vitória, Derrota, Cancelada)
+- Distribuição automática de recompensas em caso de vitória
 
-## Project Structure
+## Comandos
 
-```
-discord-bot
-├── src
-│   ├── index.js               # Entry point of the bot
-│   ├── commands                # Command handlers
-│   │   ├── adicionarkick.js    # Handles adding Kick streamers
-│   │   └── adicionartwitch.js   # Handles adding Twitch streamers
-│   ├── services                # Services for the bot
-│   │   └── streamerWatcher.js   # Checks streamer status
-│   └── data                   # Data storage
-│       └── streamers.json      # JSON file for storing streamers
-├── package.json                # NPM configuration file
-└── README.md                   # Project documentation
-```
+- `/acao` - Abre um painel para registrar uma nova ação
+  - Nome da Ação
+  - Participantes (separados por vírgula)
+  - Data (preenchida automaticamente)
 
-## Setup Instructions
+## Configuração
 
-1. Clone the repository:
-   ```
-   git clone <repository-url>
-   cd discord-bot
-   ```
-
-2. Install the dependencies:
-   ```
+1. Clone o repositório
+2. Instale as dependências:
+   ```bash
    npm install
    ```
 
-3. Create a `.env` file in the root directory and add your Discord bot token:
+3. Copie o arquivo `.env.example` para `.env` e preencha com suas informações:
    ```
-   DISCORD_TOKEN=your_bot_token
-   ```
-
-4. Run the bot:
-   ```
-   node src/index.js
+   DISCORD_BOT_TOKEN=seu_token_aqui
+   CLIENT_ID=seu_client_id_aqui
    ```
 
-## Usage
+4. Registre os comandos do bot:
+   ```bash
+   npm run deploy
+   ```
 
-- To add a Twitch streamer:
-  ```
-  /adicionartwitch <streamer_name_or_url>
-  ```
+5. Inicie o bot:
+   ```bash
+   npm start
+   ```
 
-- To add a Kick streamer:
-  ```
-  /adicionarkick <streamer_name>
-  ```
+## Estrutura do Projeto
 
-The bot will monitor the added streamers and notify the channel when they go live.
+```
+bot-discord/
+├── src/
+│   ├── data/           # Armazenamento de dados
+│   │   └── actions.json
+│   └── deploy-commands.js
+├── .env
+├── .env.example
+├── index.js
+└── package.json
+```
 
-## Contributing
+## Como Usar
 
-Feel free to submit issues or pull requests for improvements or bug fixes.
+1. Use o comando `/acao` para registrar uma nova ação
+2. Preencha o nome da ação e os participantes
+3. O bot criará um embed com as informações e botões de ação
+4. Use os botões para:
+   - Cancelar a ação
+   - Registrar vitória (permite distribuir recompensa)
+   - Registrar derrota
