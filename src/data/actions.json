@@ -1,0 +1,29 @@
+{
+  "actions": [
+    {
+      "id": "1761263524468",
+      "name": "dasdsada",
+      "date": "23/10",
+      "participants": [
+        "dnz",
+        "pacheco",
+        "mk",
+        "ph"
+      ],
+      "status": "Vitória",
+      "creator": "Marido da Sena",
+      "selectedParticipants": [
+        "mk",
+        "dnz"
+      ],
+      "reward": {
+        "total": 3424141,
+        "perParticipant": 1712070,
+        "participants": [
+          "mk",
+          "dnz"
+        ]
+      }
+    }
+  ]
+}
