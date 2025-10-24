@@ -24,6 +24,155 @@
           "dnz"
         ]
       }
+    },
+    {
+      "id": "1761263752569",
+      "name": "adad",
+      "date": "23/10",
+      "participants": [
+        "dnz",
+        "pacheco",
+        "mk",
+        "ph",
+        "a",
+        "b",
+        "c"
+      ],
+      "status": "Vitória",
+      "creator": "Marido da Sena",
+      "selectedParticipants": [
+        "pacheco",
+        "dnz",
+        "ph"
+      ],
+      "reward": {
+        "total": 13213124,
+        "perParticipant": 4404374,
+        "participants": [
+          "pacheco",
+          "dnz",
+          "ph"
+        ]
+      }
+    },
+    {
+      "id": "1761263902640",
+      "name": "daojdai",
+      "date": "23/10",
+      "participants": [
+        "dnz",
+        "pacheco",
+        "mk",
+        "ph",
+        "a",
+        "b",
+        "c"
+      ],
+      "status": "Vitória",
+      "creator": "Pacheco | 2039",
+      "selectedParticipants": [
+        "c",
+        "mk"
+      ],
+      "reward": {
+        "total": 414145,
+        "perParticipant": 207072,
+        "participants": [
+          "c",
+          "mk"
+        ]
+      }
+    },
+    {
+      "id": "1761264018966",
+      "name": "Teste 98",
+      "date": "23/10",
+      "participants": [
+        "doisk",
+        "ana",
+        "audy",
+        "nickys",
+        "nego",
+        "madeirada",
+        "goleiro",
+        "b"
+      ],
+      "status": "Vitória",
+      "creator": "Pacheco | 2039",
+      "selectedParticipants": [
+        "madeirada",
+        "audy",
+        "nego"
+      ],
+      "reward": {
+        "total": 916368,
+        "perParticipant": 305456,
+        "participants": [
+          "madeirada",
+          "audy",
+          "nego"
+        ]
+      }
+    },
+    {
+      "id": "1761266524715",
+      "name": "Comedy",
+      "date": "23/10",
+      "participants": [
+        "lpz",
+        "corvo",
+        "nicks",
+        "audy",
+        "goleiro"
+      ],
+      "status": "Vitória",
+      "creator": "Ana | 2632",
+      "selectedParticipants": [
+        "nicks",
+        "audy",
+        "goleiro"
+      ],
+      "reward": {
+        "total": 275000,
+        "perParticipant": 91666,
+        "participants": [
+          "nicks",
+          "audy",
+          "goleiro"
+        ]
+      }
+    },
+    {
+      "id": "1761267168119",
+      "name": "galinheiro",
+      "date": "23/10",
+      "participants": [
+        "2k\npixel\nml\nlpz\nvaqueiro\nmayke\nandre\nbruno\ncorvo\nkleito"
+      ],
+      "status": "Derrota",
+      "creator": "André | 2066"
+    },
+    {
+      "id": "1761268069121",
+      "name": "Fast Food",
+      "date": "23/10",
+      "participants": [
+        "Pacheco",
+        "Ph",
+        "Audy"
+      ],
+      "status": "Vitória",
+      "creator": "Pacheco | 2039",
+      "selectedParticipants": [
+        "Audy"
+      ],
+      "reward": {
+        "total": 171000,
+        "perParticipant": 171000,
+        "participants": [
+          "Audy"
+        ]
+      }
     }
   ]
 }

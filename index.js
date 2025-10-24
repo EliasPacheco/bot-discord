@@ -51,16 +51,69 @@ function saveAction(action) {
 
 // Função para criar embed da ação
 function createActionEmbed(action) {
-    return new EmbedBuilder()
-        .setTitle(`Ação: ${action.name}`)
-        .setDescription(`**Status:** ${action.status || 'Em andamento'}`)
+    const embed = new EmbedBuilder()
+        .setTitle(`🎯 ${action.name}`)
+        .setDescription(`${getStatusEmoji(action.status)} **Status:** ${action.status}`)
         .addFields(
-            { name: "Data", value: action.date, inline: true },
-            { name: "Responsável", value: action.creator, inline: true },
-            { name: "Participantes", value: action.participants.join(", "), inline: true }
+            { 
+                name: "📅 Data", 
+                value: action.date, 
+                inline: true 
+            },
+            { 
+                name: "👑 Responsável", 
+                value: action.creator, 
+                inline: true 
+            },
+            { 
+                name: "\u200B", 
+                value: "\u200B", 
+                inline: true 
+            },
+            { 
+                name: "👥 Participantes", 
+                value: formatParticipants(action.participants), 
+                inline: false 
+            }
         )
-        .setColor("#0099ff")
+        .setColor(getStatusColor(action.status))
+        .setFooter({ text: `ID da Ação: ${action.id}` })
         .setTimestamp();
+
+    return embed;
+}
+
+// Função para formatar os participantes
+function formatParticipants(participants) {
+    return participants.map(p => `• ${p}`).join("\n");
+}
+
+// Função para obter o emoji do status
+function getStatusEmoji(status) {
+    switch (status) {
+        case "Vitória":
+            return "🏆";
+        case "Derrota":
+            return "💀";
+        case "Cancelada":
+            return "❌";
+        default:
+            return "⏳";
+    }
+}
+
+// Função para obter a cor do status
+function getStatusColor(status) {
+    switch (status) {
+        case "Vitória":
+            return "#00FF00"; // Verde
+        case "Derrota":
+            return "#FF0000"; // Vermelho
+        case "Cancelada":
+            return "#808080"; // Cinza
+        default:
+            return "#FFA500"; // Laranja
+    }
 }
 
 client.on("interactionCreate", async (interaction) => {
@@ -273,46 +326,63 @@ client.on("interactionCreate", async (interaction) => {
         await interaction.showModal(rewardModal);
     }
 
+    // Atualizando o embed de vitória
     if (interaction.isModalSubmit() && interaction.customId.startsWith("reward_")) {
         const id = interaction.customId.split("_")[1];
         const rewardValue = parseInt(interaction.fields.getTextInputValue("rewardValue"));
-
+    
         const actionsPath = path.join(__dirname, "./src/data/actions.json");
         const data = JSON.parse(fs.readFileSync(actionsPath));
         const actionData = data.actions.find(a => a.id === id);
-
+    
         if (!actionData) {
             await interaction.reply({ content: "Ação não encontrada!", ephemeral: true });
             return;
         }
-
+    
         const participantCount = actionData.selectedParticipants.length;
         const shareValue = Math.floor(rewardValue / participantCount);
-
+    
         actionData.status = "Vitória";
         actionData.reward = {
             total: rewardValue,
             perParticipant: shareValue,
             participants: actionData.selectedParticipants
         };
-
+    
         const victoryEmbed = new EmbedBuilder()
-            .setTitle(`Ação: ${actionData.name}`)
-            .setDescription(`**Status:** Vitória`)
+            .setTitle(`🏆 ${actionData.name}`)
+            .setDescription(`${getStatusEmoji(actionData.status)} **Status:** Vitória`)
             .addFields(
-                { name: "Data", value: actionData.date, inline: true },
-                { name: "Responsável", value: actionData.creator, inline: true },
-                { name: "Recompensa Total", value: `${rewardValue.toLocaleString()}k`, inline: true },
-                { name: "Participantes", value: actionData.participants.map(p => 
-                    actionData.selectedParticipants.includes(p) ? 
-                    `${p}: ${shareValue.toLocaleString()}k` : 
-                    p
-                ).join("\n")
+                { 
+                    name: "📅 Data", 
+                    value: actionData.date, 
+                    inline: true 
+                },
+                { 
+                    name: "👑 Responsável", 
+                    value: actionData.creator, 
+                    inline: true 
+                },
+                { 
+                    name: "💰 Recompensa Total", 
+                    value: `${rewardValue.toLocaleString()}k`, 
+                    inline: true 
+                },
+                { 
+                    name: "📊 Distribuição da Recompensa", 
+                    value: actionData.participants.map(p => 
+                        actionData.selectedParticipants.includes(p) ? 
+                        `• ${p} ➜ ${shareValue.toLocaleString()}k 💰` : 
+                        `• ${p} ➜ 0k`
+                    ).join("\n"),
+                    inline: false
                 }
             )
-            .setColor("#00FF00")
+            .setColor(getStatusColor("Vitória"))
+            .setFooter({ text: `ID da Ação: ${actionData.id} • ${participantCount} participante(s) recompensado(s)` })
             .setTimestamp();
-
+    
         fs.writeFileSync(actionsPath, JSON.stringify(data, null, 2));
         await interaction.update({ embeds: [victoryEmbed], components: [], content: null });
     }
