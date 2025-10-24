@@ -351,7 +351,7 @@ client.on("interactionCreate", async (interaction) => {
         };
     
         const victoryEmbed = new EmbedBuilder()
-            .setTitle(`🏆 ${actionData.name}`)
+            .setTitle(`**Ação:** ${actionData.name}`)
             .setDescription(`${getStatusEmoji(actionData.status)} **Status:** Vitória`)
             .addFields(
                 { 
