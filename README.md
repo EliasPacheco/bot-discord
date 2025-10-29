@@ -15,6 +15,12 @@ Este bot do Discord permite registrar e gerenciar ações com participantes, inc
   - Nome da Ação
   - Participantes (separados por vírgula)
   - Data (preenchida automaticamente)
+- `/relatorio` - Mostra um relatório semanal detalhado
+  - Total de ações
+  - Número de vitórias e derrotas
+  - Taxa de vitória
+  - Total de recompensas distribuídas
+  - Status das ações (em andamento, canceladas)
 
 ## Configuração
 

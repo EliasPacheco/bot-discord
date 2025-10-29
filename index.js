@@ -116,7 +116,98 @@ function getStatusColor(status) {
     }
 }
 
+// Função para obter o relatório semanal
+function getWeeklyReport() {
+    const actionsPath = path.join(__dirname, "./src/data/actions.json");
+    const data = JSON.parse(fs.readFileSync(actionsPath));
+    
+    // Obtém a data de 7 dias atrás
+    const today = new Date();
+    const lastWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+    
+    // Filtra ações da última semana
+    const weeklyActions = data.actions.filter(action => {
+        const [day, month] = action.date.split("/");
+        const actionDate = new Date(today.getFullYear(), parseInt(month) - 1, parseInt(day));
+        return actionDate >= lastWeek && actionDate <= today;
+    });
+    
+    // Calcula estatísticas
+    const victories = weeklyActions.filter(a => a.status === "Vitória").length;
+    const defeats = weeklyActions.filter(a => a.status === "Derrota").length;
+    const canceled = weeklyActions.filter(a => a.status === "Cancelada").length;
+    const inProgress = weeklyActions.filter(a => a.status === "Em andamento").length;
+    
+    // Calcula total de recompensas
+    const totalRewards = weeklyActions
+        .filter(a => a.status === "Vitória" && a.reward)
+        .reduce((sum, action) => sum + action.reward.total, 0);
+    
+    return {
+        total: weeklyActions.length,
+        victories,
+        defeats,
+        canceled,
+        inProgress,
+        totalRewards
+    };
+}
+
 client.on("interactionCreate", async (interaction) => {
+    if (interaction.isCommand() && interaction.commandName === "relatorio") {
+        const report = getWeeklyReport();
+        
+        const winRate = report.total > 0 
+            ? ((report.victories / (report.victories + report.defeats)) * 100).toFixed(1)
+            : 0;
+        
+        const embed = new EmbedBuilder()
+            .setTitle("📊 Relatório Semanal")
+            .setDescription("Resumo das ações dos últimos 7 dias")
+            .addFields(
+                {
+                    name: "🎯 Total de Ações",
+                    value: report.total.toString(),
+                    inline: true
+                },
+                {
+                    name: "🏆 Vitórias",
+                    value: report.victories.toString(),
+                    inline: true
+                },
+                {
+                    name: "💀 Derrotas",
+                    value: report.defeats.toString(),
+                    inline: true
+                },
+                {
+                    name: "📈 Taxa de Vitória",
+                    value: `${winRate}%`,
+                    inline: true
+                },
+                {
+                    name: "❌ Canceladas",
+                    value: report.canceled.toString(),
+                    inline: true
+                },
+                {
+                    name: "⏳ Em Andamento",
+                    value: report.inProgress.toString(),
+                    inline: true
+                },
+                {
+                    name: "💰 Total de Recompensas",
+                    value: `${report.totalRewards.toLocaleString()}k`,
+                    inline: false
+                }
+            )
+            .setColor("#00FF00")
+            .setTimestamp();
+        
+        await interaction.reply({ embeds: [embed] });
+        return;
+    }
+
     if (interaction.isCommand() && interaction.commandName === "acao") {
         const modal = new ModalBuilder()
             .setCustomId("action-modal")

@@ -173,6 +173,262 @@
           "Audy"
         ]
       }
+    },
+    {
+      "id": "1761435790369",
+      "name": "Comedy",
+      "date": "25/10",
+      "participants": [
+        "ana",
+        "cecilia",
+        "ph",
+        "veinho",
+        "dods"
+      ],
+      "status": "Vitória",
+      "creator": "Ana | 2632",
+      "selectedParticipants": [
+        "dods"
+      ],
+      "reward": {
+        "total": 275000,
+        "perParticipant": 275000,
+        "participants": [
+          "dods"
+        ]
+      }
+    },
+    {
+      "id": "1761436247747",
+      "name": "TEATRO",
+      "date": "25/10",
+      "participants": [
+        "mec",
+        "ml",
+        "pix",
+        "claudio",
+        "audy",
+        "mt",
+        "rc"
+      ],
+      "status": "Vitória",
+      "creator": "Cecíllya | 3131",
+      "selectedParticipants": [
+        "ml",
+        "claudio",
+        "audy",
+        "pix"
+      ],
+      "reward": {
+        "total": 320000,
+        "perParticipant": 80000,
+        "participants": [
+          "ml",
+          "claudio",
+          "audy",
+          "pix"
+        ]
+      }
+    },
+    {
+      "id": "1761437469061",
+      "name": "Ammu Porto",
+      "date": "25/10",
+      "participants": [
+        "Pacheco",
+        "JP"
+      ],
+      "status": "Vitória",
+      "creator": "Pacheco | 2039",
+      "selectedParticipants": [
+        "Pacheco"
+      ],
+      "reward": {
+        "total": 119,
+        "perParticipant": 119,
+        "participants": [
+          "Pacheco"
+        ]
+      }
+    },
+    {
+      "id": "1761438718600",
+      "name": "Galinheiro",
+      "date": "25/10",
+      "participants": [
+        "ml",
+        "pix",
+        "rc",
+        "claudio",
+        "jp",
+        "veinho",
+        "ana",
+        "cecíllya",
+        "audy",
+        "mt"
+      ],
+      "status": "Cancelada",
+      "creator": "Cecíllya | 3131"
+    },
+    {
+      "id": "1761438828363",
+      "name": "teatro",
+      "date": "25/10",
+      "participants": [
+        "audy\nclaudio\nemanuel\nrc\nmt\nmec\npix"
+      ],
+      "status": "Vitória",
+      "creator": "Claudio Madeirada |  1519",
+      "selectedParticipants": [
+        "audy\nclaudio\nemanuel\nrc\nmt\nmec\npix"
+      ],
+      "reward": {
+        "total": 370,
+        "perParticipant": 370,
+        "participants": [
+          "audy\nclaudio\nemanuel\nrc\nmt\nmec\npix"
+        ]
+      }
+    },
+    {
+      "id": "1761439005916",
+      "name": "teatro",
+      "date": "25/10",
+      "participants": [
+        "audy",
+        "claudio",
+        "emanuel",
+        "rc",
+        "mt",
+        "mec",
+        "pix"
+      ],
+      "status": "Vitória",
+      "creator": "Claudio Madeirada |  1519",
+      "selectedParticipants": [
+        "claudio",
+        "audy",
+        "emanuel",
+        "pix"
+      ],
+      "reward": {
+        "total": 370,
+        "perParticipant": 92,
+        "participants": [
+          "claudio",
+          "audy",
+          "emanuel",
+          "pix"
+        ]
+      }
+    },
+    {
+      "id": "1761439135142",
+      "name": "galinheiro",
+      "date": "25/10",
+      "participants": [
+        "ml",
+        "pix",
+        "rc",
+        "claudio",
+        "jp",
+        "veinho",
+        "ana",
+        "cecilia",
+        "audy",
+        "mt"
+      ],
+      "status": "Vitória",
+      "creator": "Claudio Madeirada |  1519",
+      "selectedParticipants": [
+        "audy",
+        "ml",
+        "pix",
+        "claudio"
+      ],
+      "reward": {
+        "total": 1140000,
+        "perParticipant": 285000,
+        "participants": [
+          "audy",
+          "ml",
+          "pix",
+          "claudio"
+        ]
+      }
+    },
+    {
+      "id": "1761522513170",
+      "name": "açougue",
+      "date": "26/10",
+      "participants": [
+        "claudio",
+        "audy",
+        "bn",
+        "sagaz",
+        "gz",
+        "gs",
+        "ana",
+        "nicks"
+      ],
+      "status": "Cancelada",
+      "creator": "Ana | 2632"
+    },
+    {
+      "id": "1761526837042",
+      "name": "açougue",
+      "date": "26/10",
+      "participants": [
+        "claudio",
+        "audy",
+        "nicks",
+        "gs",
+        "gz",
+        "ana",
+        "alke",
+        "machado"
+      ],
+      "status": "Vitória",
+      "creator": "Ana | 2632",
+      "selectedParticipants": [
+        "claudio",
+        "audy",
+        "nicks"
+      ],
+      "reward": {
+        "total": 913000,
+        "perParticipant": 304333,
+        "participants": [
+          "claudio",
+          "audy",
+          "nicks"
+        ]
+      }
+    },
+    {
+      "id": "1761691444549",
+      "name": "fast food",
+      "date": "28/10",
+      "participants": [
+        "lc",
+        "n1",
+        "filhote"
+      ],
+      "status": "Derrota",
+      "creator": "Ana | 2632"
+    },
+    {
+      "id": "1761692275563",
+      "name": "hiper",
+      "date": "28/10",
+      "participants": [
+        "cecilia",
+        "dods",
+        "audy",
+        "ana"
+      ],
+      "status": "Derrota",
+      "creator": "Ana | 2632"
     }
   ]
 }

@@ -4,7 +4,10 @@ const { REST, Routes, SlashCommandBuilder } = require('discord.js');
 const commands = [
     new SlashCommandBuilder()
         .setName('acao')
-        .setDescription('Registra uma nova ação')
+        .setDescription('Registra uma nova ação'),
+    new SlashCommandBuilder()
+        .setName('relatorio')
+        .setDescription('Mostra o relatório semanal de vitórias e derrotas')
 ];
 
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
