@@ -125,6 +125,18 @@ function getWeeklyReport() {
     const today = new Date();
     const lastWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
     
+    // Gera lista de dias no período (ordenada)
+    const daysInRange = [];
+    for (let d = new Date(lastWeek); d <= today; d.setDate(d.getDate() + 1)) {
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        daysInRange.push(`${day}/${month}`);
+    }
+
+    // Inicializa mapa de ganhos por dia
+    const dailyEarnings = {};
+    daysInRange.forEach(d => dailyEarnings[d] = 0);
+
     // Filtra ações da última semana
     const weeklyActions = data.actions.filter(action => {
         const [day, month] = action.date.split("/");
@@ -138,10 +150,19 @@ function getWeeklyReport() {
     const canceled = weeklyActions.filter(a => a.status === "Cancelada").length;
     const inProgress = weeklyActions.filter(a => a.status === "Em andamento").length;
     
-    // Calcula total de recompensas
-    const totalRewards = weeklyActions
-        .filter(a => a.status === "Vitória" && a.reward)
-        .reduce((sum, action) => sum + action.reward.total, 0);
+    // Calcula total de recompensas e acumula por dia (assume reward.total existe como número)
+    let totalRewards = 0;
+    weeklyActions.forEach(a => {
+        if (a.status === "Vitória" && a.reward && typeof a.reward.total === "number") {
+            totalRewards += a.reward.total;
+            if (dailyEarnings[a.date] !== undefined) {
+                dailyEarnings[a.date] += a.reward.total;
+            } else {
+                // Caso a.data não esteja no mapa (por segurança), inicializa
+                dailyEarnings[a.date] = a.reward.total;
+            }
+        }
+    });
     
     return {
         total: weeklyActions.length,
@@ -149,7 +170,9 @@ function getWeeklyReport() {
         defeats,
         canceled,
         inProgress,
-        totalRewards
+        totalRewards,
+        dailyEarnings,
+        daysInRange
     };
 }
 
@@ -165,6 +188,11 @@ client.on("interactionCreate", async (interaction) => {
         const winRate = report.total > 0 
             ? ((report.victories / (report.victories + report.defeats)) * 100).toFixed(1)
             : 0;
+        
+        const perDayLines = report.daysInRange.map(d => {
+            const amount = report.dailyEarnings[d] || 0;
+            return `${d} - ${amount.toLocaleString()}k`;
+        }).join("\n");
         
         const embed = new EmbedBuilder()
             .setTitle("📊 Relatório Semanal")
@@ -203,6 +231,11 @@ client.on("interactionCreate", async (interaction) => {
                 {
                     name: "💰 Total de Recompensas",
                     value: `${report.totalRewards.toLocaleString()}k`,
+                    inline: false
+                },
+                {
+                    name: "💵 Ganhos por Dia",
+                    value: perDayLines || "Nenhum ganho neste período",
                     inline: false
                 }
             )
@@ -401,9 +434,14 @@ client.on("interactionCreate", async (interaction) => {
         const data = JSON.parse(fs.readFileSync(actionsPath));
         const actionData = data.actions.find(a => a.id === id);
 
-        if (!actionData || !actionData.selectedParticipants || actionData.selectedParticipants.length === 0) {
-            await interaction.reply({ content: "Por favor, selecione pelo menos um participante!", ephemeral: true });
+        if (!actionData) {
+            await interaction.reply({ content: "Ação não encontrada!", ephemeral: true });
             return;
+        }
+
+        // Permite confirmar mesmo que nenhum participante tenha sido selecionado (não obrigatório)
+        if (!actionData.selectedParticipants) {
+            actionData.selectedParticipants = [];
         }
 
         const rewardModal = new ModalBuilder()
@@ -426,59 +464,63 @@ client.on("interactionCreate", async (interaction) => {
     if (interaction.isModalSubmit() && interaction.customId.startsWith("reward_")) {
         const id = interaction.customId.split("_")[1];
         const rewardValue = parseInt(interaction.fields.getTextInputValue("rewardValue"));
-    
+
         const actionsPath = path.join(__dirname, "./src/data/actions.json");
         const data = JSON.parse(fs.readFileSync(actionsPath));
         const actionData = data.actions.find(a => a.id === id);
-    
+
         if (!actionData) {
             await interaction.reply({ content: "Ação não encontrada!", ephemeral: true });
             return;
         }
-    
-        const participantCount = actionData.selectedParticipants.length;
-        const shareValue = Math.floor(rewardValue / participantCount);
-    
+
+        // Segurança: permitir 0 participantes selecionados (não obrigatório)
+        const participantCount = actionData.selectedParticipants ? actionData.selectedParticipants.length : 0;
+        const shareValue = participantCount > 0 ? Math.floor(rewardValue / participantCount) : 0;
+
         actionData.status = "Vitória";
         actionData.reward = {
             total: rewardValue,
             perParticipant: shareValue,
-            participants: actionData.selectedParticipants
+            participants: actionData.selectedParticipants || []
         };
-    
+
         const victoryEmbed = new EmbedBuilder()
             .setTitle(`**Ação:** ${actionData.name}`)
             .setDescription(`${getStatusEmoji(actionData.status)} **Status:** Vitória`)
             .addFields(
-                { 
-                    name: "📅 Data", 
-                    value: actionData.date, 
-                    inline: true 
-                },
-                { 
-                    name: "👑 Responsável", 
-                    value: actionData.creator, 
-                    inline: true 
-                },
-                { 
-                    name: "💰 Recompensa Total", 
-                    value: `${rewardValue.toLocaleString()}k`, 
-                    inline: true 
-                },
-                { 
-                    name: "📊 Distribuição da Recompensa", 
-                    value: actionData.participants.map(p => 
-                        actionData.selectedParticipants.includes(p) ? 
-                        `• ${p} ➜ ${shareValue.toLocaleString()}k 💰` : 
-                        `• ${p} ➜ 0k`
-                    ).join("\n"),
-                    inline: false
-                }
+                { name: "📅 Data", value: actionData.date, inline: true },
+                { name: "👑 Responsável", value: actionData.creator, inline: true },
+                { name: "💰 Recompensa Total", value: `${rewardValue.toLocaleString()}k`, inline: true }
             )
             .setColor(getStatusColor("Vitória"))
-            .setFooter({ text: `ID da Ação: ${actionData.id} • ${participantCount} participante(s) recompensado(s)` })
+            .setFooter({ text: `${participantCount} participante(s) recompensado(s)` })
             .setTimestamp();
-    
+
+        // 🔥 Ajuste principal:
+        if (participantCount > 0) {
+            // Com participantes selecionados → mostra a distribuição
+            const distributionText = actionData.participants.map(p =>
+                actionData.selectedParticipants.includes(p)
+                    ? `• ${p} ➜ ${shareValue.toLocaleString()}k 💰`
+                    : `• ${p} ➜ 0k`
+            ).join("\n");
+
+            victoryEmbed.addFields({
+                name: "📊 Distribuição da Recompensa",
+                value: distributionText,
+                inline: false
+            });
+        } else {
+            // Nenhum participante selecionado → mostra apenas lista
+            const participantList = actionData.participants.map(p => `• ${p}`).join("\n");
+            victoryEmbed.addFields({
+                name: "👥 Participantes",
+                value: participantList,
+                inline: false
+            });
+        }
+
         fs.writeFileSync(actionsPath, JSON.stringify(data, null, 2));
         await interaction.update({ embeds: [victoryEmbed], components: [], content: null });
     }
