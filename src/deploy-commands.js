@@ -7,7 +7,10 @@ const commands = [
         .setDescription('Registra uma nova ação'),
     new SlashCommandBuilder()
         .setName('relatorio')
-        .setDescription('Mostra o relatório semanal de vitórias e derrotas')
+        .setDescription('Mostra o relatório semanal de vitórias e derrotas'),
+    new SlashCommandBuilder()
+        .setName('setar')
+        .setDescription('Permite definir seu nome e ID personalizados')
 ];
 
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);

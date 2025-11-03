@@ -9,6 +9,7 @@ const {
     ModalBuilder,
     TextInputBuilder,
     TextInputStyle,
+    PermissionsBitField, // ADICIONADO
 } = require("discord.js");
 const fs = require("fs");
 const path = require("path");
@@ -246,6 +247,25 @@ client.on("interactionCreate", async (interaction) => {
         return;
     }
 
+    // Comando /setar — envia botão que abre modal para nome | id
+    if (interaction.isCommand() && interaction.commandName === "setar") {
+        const embed = new EmbedBuilder()
+            .setTitle("🔧 Definir Nome | ID")
+            .setDescription("Clique no botão abaixo para abrir o formulário e definir seu nome e ID.")
+            .setColor("#00AAFF");
+
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId("setar_open")
+                .setLabel("Definir Nome e ID")
+                .setStyle(ButtonStyle.Primary)
+        );
+
+        // mostrar para todos (não ephemeral)
+        await interaction.reply({ embeds: [embed], components: [row] });
+        return;
+    }
+    
     if (interaction.isCommand() && interaction.commandName === "acao") {
         const modal = new ModalBuilder()
             .setCustomId("action-modal")
@@ -305,6 +325,35 @@ client.on("interactionCreate", async (interaction) => {
         );
 
         await interaction.reply({ embeds: [embed], components: [buttons] });
+    }
+
+    // Handler do botão que abre o modal de /setar (mover para antes do bloco genérico de buttons)
+    if (interaction.isButton() && interaction.customId === "setar_open") {
+        const modal = new ModalBuilder()
+            .setCustomId("setar_modal")
+            .setTitle("Definir Nome | ID");
+
+        const nameInput = new TextInputBuilder()
+            .setCustomId("setName")
+            .setLabel("Nome (ex: pacheco)")
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+            .setMaxLength(30);
+
+        const idInput = new TextInputBuilder()
+            .setCustomId("setId")
+            .setLabel("ID (ex: 3414)")
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+            .setMaxLength(16);
+
+        modal.addComponents(
+            new ActionRowBuilder().addComponents(nameInput),
+            new ActionRowBuilder().addComponents(idInput)
+        );
+
+        await interaction.showModal(modal);
+        return;
     }
 
     if (interaction.isButton()) {
@@ -523,6 +572,85 @@ client.on("interactionCreate", async (interaction) => {
 
         fs.writeFileSync(actionsPath, JSON.stringify(data, null, 2));
         await interaction.update({ embeds: [victoryEmbed], components: [], content: null });
+    }
+
+    // Handler do botão que abre o modal de /setar (mover para antes do bloco genérico de buttons)
+    if (interaction.isButton() && interaction.customId === "setar_open") {
+        const modal = new ModalBuilder()
+            .setCustomId("setar_modal")
+            .setTitle("Definir Nome | ID");
+
+        const nameInput = new TextInputBuilder()
+            .setCustomId("setName")
+            .setLabel("Nome (ex: pacheco)")
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+            .setMaxLength(30);
+
+        const idInput = new TextInputBuilder()
+            .setCustomId("setId")
+            .setLabel("ID (ex: 3414)")
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+            .setMaxLength(16);
+
+        modal.addComponents(
+            new ActionRowBuilder().addComponents(nameInput),
+            new ActionRowBuilder().addComponents(idInput)
+        );
+
+        await interaction.showModal(modal);
+        return;
+    }
+
+    // Handler do modal /setar — altera nickname para "nome | id"
+    if (interaction.isModalSubmit() && interaction.customId === "setar_modal") {
+        const name = interaction.fields.getTextInputValue("setName").replace(/\|/g, "").trim();
+        const idValue = interaction.fields.getTextInputValue("setId").replace(/\|/g, "").trim();
+        const nickname = `${name} | ${idValue}`;
+
+        if (nickname.length > 32) {
+            await interaction.reply({ content: "Apelido muito longo. Use nomes/IDs mais curtos para caber em `nome | id`.", ephemeral: true });
+            return;
+        }
+
+        try {
+            if (!interaction.guild) {
+                await interaction.reply({ content: "Não foi possível alterar o apelido aqui.", ephemeral: true });
+                return;
+            }
+
+            // busca o membro atual para ter dados atualizados
+            const member = await interaction.guild.members.fetch(interaction.user.id);
+            const botMember = interaction.guild.members.me;
+
+            // verifica permissão Manage Nicknames
+            if (!botMember.permissions.has(PermissionsBitField.Flags.ManageNicknames)) {
+                await interaction.reply({ content: "Erro: o bot não tem a permissão 'Manage Nicknames'. Conceda essa permissão ao bot.", ephemeral: true });
+                return;
+            }
+
+            // verifica hierarquia de cargos (bot precisa ter cargo acima do usuário)
+            const botHighest = botMember.roles?.highest?.position ?? 0;
+            const targetHighest = member.roles?.highest?.position ?? 0;
+            // se for dono do servidor, o bot não consegue alterar mesmo com permissão
+            if (interaction.guild.ownerId === member.id) {
+                await interaction.reply({ content: "Não é possível alterar o apelido do dono do servidor.", ephemeral: true });
+                return;
+            }
+            if (botHighest <= targetHighest) {
+                await interaction.reply({ content: "Erro: hierarquia de cargos impede alteração do apelido. Coloque o cargo do bot acima do usuário.", ephemeral: true });
+                return;
+            }
+
+            await member.setNickname(nickname);
+            // confirmar apenas para quem submeteu (ephemeral true)
+            await interaction.reply({ content: `Apelido alterado para: \`${nickname}\``, ephemeral: true });
+        } catch (err) {
+            console.error("Erro ao alterar nickname:", err);
+            await interaction.reply({ content: "Erro ao alterar apelido. Verifique se o bot tem permissão 'Manage Nicknames' e se a hierarquia de cargos permite.", ephemeral: true });
+        }
+        return;
     }
 });
 
