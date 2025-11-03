@@ -157,13 +157,18 @@ client.on("interactionCreate", async (interaction) => {
     if (interaction.isCommand() && interaction.commandName === "relatorio") {
         const report = getWeeklyReport();
         
+        // Get date range
+        const today = new Date();
+        const lastWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const dateRange = `${lastWeek.getDate().toString().padStart(2, '0')}/${(lastWeek.getMonth() + 1).toString().padStart(2, '0')} até ${today.getDate().toString().padStart(2, '0')}/${(today.getMonth() + 1).toString().padStart(2, '0')}`;
+        
         const winRate = report.total > 0 
             ? ((report.victories / (report.victories + report.defeats)) * 100).toFixed(1)
             : 0;
         
         const embed = new EmbedBuilder()
             .setTitle("📊 Relatório Semanal")
-            .setDescription("Resumo das ações dos últimos 7 dias")
+            .setDescription(`Período: ${dateRange}`)
             .addFields(
                 {
                     name: "🎯 Total de Ações",
