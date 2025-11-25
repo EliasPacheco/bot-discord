@@ -265,6 +265,29 @@ client.on("interactionCreate", async (interaction) => {
         await interaction.reply({ embeds: [embed], components: [row] });
         return;
     }
+
+    // Comando /pedir-set — envia botão no chat que abre modal (igual ao /setar)
+        if (interaction.isCommand() && interaction.commandName === "pedir-set") {
+            const embed = new EmbedBuilder()
+                .setTitle("SOLICITE SUA SETAGEM")
+                .setDescription("Bem-vindo ao sistema de registro!\n\nInicie seu registro e torne-se um membro oficial.\n\nClique no botão abaixo para começar.")
+                .setColor("#00AAFF")
+                .setImage('attachment://bairro13.png');
+
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId("pedir_set_open")
+                    .setLabel("Iniciar Registro")
+                    .setStyle(ButtonStyle.Success)
+            );
+
+            const imagePath = path.join(__dirname, 'assets', 'bairro13.png');
+            const files = [];
+            if (fs.existsSync(imagePath)) files.push(imagePath);
+
+            await interaction.reply({ embeds: [embed], components: [row], files });
+            return;
+        }
     
     if (interaction.isCommand() && interaction.commandName === "acao") {
         const modal = new ModalBuilder()
@@ -356,7 +379,44 @@ client.on("interactionCreate", async (interaction) => {
         return;
     }
 
-    if (interaction.isButton()) {
+    // Handler do botão que abre o modal de /pedir-set
+    if (interaction.isButton() && interaction.customId === "pedir_set_open") {
+        const modal = new ModalBuilder()
+            .setCustomId("pedir_set_modal")
+            .setTitle("Pedir Set | ID");
+
+        const nameInput = new TextInputBuilder()
+            .setCustomId("setName")
+            .setLabel("Nome (ex: pacheco)")
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+            .setMaxLength(30);
+
+        const idInput = new TextInputBuilder()
+            .setCustomId("setId")
+            .setLabel("ID (ex: 3414)")
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+            .setMaxLength(16);
+
+        const indicouInput = new TextInputBuilder()
+            .setCustomId("quemIndicou")
+            .setLabel("Quem indicou")
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+            .setMaxLength(50);
+
+        modal.addComponents(
+            new ActionRowBuilder().addComponents(nameInput),
+            new ActionRowBuilder().addComponents(idInput),
+            new ActionRowBuilder().addComponents(indicouInput)
+        );
+
+        await interaction.showModal(modal);
+        return;
+    }
+
+    if (interaction.isButton() && /^(cancel|defeat|victory)_/.test(interaction.customId)) {
         const [action, id] = interaction.customId.split("_");
         const actionsPath = path.join(__dirname, "./src/data/actions.json");
         const data = JSON.parse(fs.readFileSync(actionsPath));
@@ -601,6 +661,166 @@ client.on("interactionCreate", async (interaction) => {
 
         await interaction.showModal(modal);
         return;
+    }
+
+    // Handler do modal /pedir-set — envia embed para canal de aprovação com botões
+    if (interaction.isModalSubmit() && interaction.customId === "pedir_set_modal") {
+        const name = interaction.fields.getTextInputValue("setName").replace(/\|/g, "").trim();
+        const idValue = interaction.fields.getTextInputValue("setId").replace(/\|/g, "").trim();
+        const quemIndicou = interaction.fields.getTextInputValue("quemIndicou") || "Não informado";
+
+        const requesterDisplay = interaction.member ? interaction.member.displayName : interaction.user.username;
+        const embed = new EmbedBuilder()
+            .setTitle("📩 Pedido de Setagem")
+            .setDescription(`Pedido enviado por: <@${interaction.user.id}>`)
+            .addFields(
+                { name: "📝 Nome", value: name, inline: true },
+                { name: "🔢 ID", value: idValue, inline: true },
+                { name: "🤝 Quem indicou", value: quemIndicou, inline: true }
+            )
+            .setColor("#00AAFF")
+            .setFooter({ text: `Solicitante: ${requesterDisplay} • ID: ${interaction.user.id}` })
+            .setTimestamp();
+
+        const authorizeButton = new ButtonBuilder()
+            .setCustomId(`pedir_authorize_${interaction.user.id}`)
+            .setLabel("Autorizar")
+            .setStyle(ButtonStyle.Success);
+
+        const rejectButton = new ButtonBuilder()
+            .setCustomId(`pedir_reject_${interaction.user.id}`)
+            .setLabel("Recusar")
+            .setStyle(ButtonStyle.Danger);
+
+        const row = new ActionRowBuilder().addComponents(authorizeButton, rejectButton);
+
+        // Canal alvo (ID obtido da URL informada)
+        const targetChannelId = "1442691467041837247";
+        try {
+            const channel = await client.channels.fetch(targetChannelId);
+            if (!channel || !channel.send) {
+                await interaction.reply({ content: "Erro: canal de envio não encontrado.", ephemeral: true });
+                return;
+            }
+
+            await channel.send({ embeds: [embed], components: [row] });
+            await interaction.reply({ content: "Pedido enviado para aprovação.", ephemeral: true });
+        } catch (err) {
+            console.error("Erro ao enviar pedido de set para canal:", err);
+            await interaction.reply({ content: "Erro ao enviar pedido. Contate o administrador.", ephemeral: true });
+        }
+
+        return;
+    }
+
+    // Handler para botões de /pedir-set (autorizar / recusar)
+    if (interaction.isButton() && (interaction.customId.startsWith('pedir_authorize_') || interaction.customId.startsWith('pedir_reject_'))) {
+        const parts = interaction.customId.split('_');
+        const action = parts[1]; // 'authorize' or 'reject'
+        const targetId = parts[2];
+
+        // permission check: only users with ManageRoles can authorize/rejeitar
+        if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
+            await interaction.reply({ content: 'Você não tem permissão para executar esta ação.', ephemeral: true });
+            return;
+        }
+
+        // fetch member in this guild
+        if (!interaction.guild) {
+            await interaction.reply({ content: 'Operação só pode ser feita em servidor.', ephemeral: true });
+            return;
+        }
+
+        try {
+            const targetMember = await interaction.guild.members.fetch(targetId);
+            const botMember = interaction.guild.members.me;
+
+            // prepare updated embed
+            const approverDisplay = interaction.member ? interaction.member.displayName : interaction.user.username;
+            const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0] || new EmbedBuilder())
+                .setFooter({ text: `Decidido por: ${approverDisplay}` })
+                .setTimestamp();
+
+            // disable buttons
+            const disabledRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('disabled_1').setLabel('Autorizar').setStyle(ButtonStyle.Success).setDisabled(true),
+                new ButtonBuilder().setCustomId('disabled_2').setLabel('Recusar').setStyle(ButtonStyle.Danger).setDisabled(true)
+            );
+
+            if (action === 'authorize') {
+                // check manage roles permission for bot
+                if (!botMember.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
+                    await interaction.reply({ content: "Erro: o bot não tem permissão 'Manage Roles'.", ephemeral: true });
+                    return;
+                }
+
+                // attempt to add/remove roles
+                try {
+                    await targetMember.roles.add('1314624079646687293');
+                } catch (err) {
+                    console.error('Falha ao adicionar cargo:', err);
+                }
+                try {
+                    await targetMember.roles.remove('1371222752580862103');
+                } catch (err) {
+                    console.error('Falha ao remover cargo:', err);
+                }
+
+                // Try to extract requested name and id from the embed fields to set nickname
+                try {
+                    const originalEmbed = interaction.message.embeds[0];
+                    let requestedName = null;
+                    let requestedId = null;
+                    if (originalEmbed && originalEmbed.fields) {
+                        const nameField = originalEmbed.fields.find(f => f.name && f.name.toLowerCase().includes('nome'));
+                        const idField = originalEmbed.fields.find(f => f.name && (f.name.toLowerCase().includes('id') || f.name.includes('🔢')));
+                        requestedName = nameField ? nameField.value : null;
+                        requestedId = idField ? idField.value : null;
+                    }
+
+                    if (requestedName && requestedId) {
+                        const nickname = `${requestedName} | ${requestedId}`.slice(0, 32);
+
+                        // Check bot permissions and role hierarchy similar to /setar
+                        if (interaction.guild) {
+                            const botMember = interaction.guild.members.me;
+                            const botHighest = botMember.roles?.highest?.position ?? 0;
+                            const targetHighest = targetMember.roles?.highest?.position ?? 0;
+
+                            if (!botMember.permissions.has(PermissionsBitField.Flags.ManageNicknames)) {
+                                console.warn('Bot sem permissão ManageNicknames, não será alterado nickname.');
+                            } else if (interaction.guild.ownerId === targetMember.id) {
+                                console.warn('Não é possível alterar apelido do dono do servidor.');
+                            } else if (botHighest <= targetHighest) {
+                                console.warn('Hierarquia impede alteração de nickname do usuário.');
+                            } else {
+                                try {
+                                    await targetMember.setNickname(nickname);
+                                } catch (err) {
+                                    console.error('Falha ao setar nickname do usuário:', err);
+                                }
+                            }
+                        }
+                    }
+                } catch (err) {
+                    console.error('Erro ao tentar alterar nickname do solicitante:', err);
+                }
+
+                updatedEmbed.setColor('#00FF00').setDescription((updatedEmbed.data.description || '') + `\n\n✅ Autorizado por **${approverDisplay}**`);
+                await interaction.update({ embeds: [updatedEmbed], components: [disabledRow] });
+                return;
+            }
+
+            if (action === 'reject') {
+                updatedEmbed.setColor('#FF0000').setDescription((updatedEmbed.data.description || '') + `\n\n❌ Recusado por **${approverDisplay}**`);
+                await interaction.update({ embeds: [updatedEmbed], components: [disabledRow] });
+                return;
+            }
+        } catch (err) {
+            console.error('Erro ao processar botão pedir-set:', err);
+            await interaction.reply({ content: 'Erro ao processar essa solicitação.', ephemeral: true });
+            return;
+        }
     }
 
     // Handler do modal /setar — altera nickname para "nome | id"

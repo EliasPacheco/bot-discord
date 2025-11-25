@@ -11,6 +11,9 @@ const commands = [
     new SlashCommandBuilder()
         .setName('setar')
         .setDescription('Permite definir seu nome e ID personalizados')
+    , new SlashCommandBuilder()
+        .setName('pedir-set')
+        .setDescription('Pede para alterar nome e ID (envia para aprovação)')
 ];
 
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
