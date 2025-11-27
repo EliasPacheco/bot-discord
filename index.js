@@ -31,6 +31,14 @@ client.once("ready", () => {
     console.log(`Bot logado como ${client.user.tag}!`);
 });
 
+// Evita que erros não tratados no client provoquem crash da aplicação
+client.on('error', (err) => {
+    console.error('[CLIENT ERROR]', err);
+});
+client.on('shardError', (err) => {
+    console.error('[SHARD ERROR]', err);
+});
+
 // Função para obter a data atual no formato DD/MM
 function getCurrentDate() {
     const date = new Date();
@@ -114,6 +122,50 @@ function getStatusColor(status) {
             return "#808080"; // Cinza
         default:
             return "#FFA500"; // Laranja
+    }
+}
+
+// Helper seguro para responder interações (reply ou followUp se já respondeu)
+async function safeReply(interaction, options) {
+    try {
+        if (!interaction) return;
+        if (interaction.replied || interaction.deferred) {
+            return await interaction.followUp(options).catch(err => console.error('safeReply followUp failed:', err));
+        } else {
+            return await interaction.reply(options).catch(err => console.error('safeReply reply failed:', err));
+        }
+    } catch (err) {
+        console.error('safeReply error:', err);
+    }
+}
+
+// Helper seguro para atualizar interações (update) com fallback
+async function safeUpdate(interaction, options) {
+    try {
+        return await interaction.update(options);
+    } catch (err) {
+        // Se a interação já expirou ou for desconhecida, tenta um followUp ou apenas loga
+        if (err && err.code === 10062) {
+            console.warn('safeUpdate: interaction unknown or expired');
+            try {
+                if (interaction.replied || interaction.deferred) {
+                    return await interaction.followUp(options).catch(e => console.error('safeUpdate followUp failed:', e));
+                }
+            } catch (e) {
+                console.error('safeUpdate fallback failed:', e);
+            }
+            return;
+        }
+        console.error('safeUpdate failed:', err);
+        try {
+            if (interaction.replied || interaction.deferred) {
+                return await interaction.followUp(options).catch(e => console.error('safeUpdate followUp failed:', e));
+            } else {
+                return await interaction.reply(options).catch(e => console.error('safeUpdate reply failed:', e));
+            }
+        } catch (e) {
+            console.error('safeUpdate final fallback failed:', e);
+        }
     }
 }
 
@@ -431,13 +483,13 @@ client.on("interactionCreate", async (interaction) => {
             case "cancel":
                 actionData.status = "Cancelada";
                 const cancelEmbed = createActionEmbed(actionData);
-                await interaction.update({ embeds: [cancelEmbed], components: [] });
+                await safeUpdate(interaction, { embeds: [cancelEmbed], components: [] });
                 break;
 
             case "defeat":
                 actionData.status = "Derrota";
                 const defeatEmbed = createActionEmbed(actionData);
-                await interaction.update({ embeds: [defeatEmbed], components: [] });
+                await safeUpdate(interaction, { embeds: [defeatEmbed], components: [] });
                 break;
 
             case "victory":
@@ -469,7 +521,7 @@ client.on("interactionCreate", async (interaction) => {
 
                 const confirmRow = new ActionRowBuilder().addComponents(confirmButton);
 
-                await interaction.update({ 
+                await safeUpdate(interaction, { 
                     content: "Selecione os participantes que receberão a recompensa:",
                     components: [...participantRows, confirmRow],
                     embeds: []
@@ -530,7 +582,7 @@ client.on("interactionCreate", async (interaction) => {
 
         fs.writeFileSync(actionsPath, JSON.stringify(data, null, 2));
 
-        await interaction.update({
+        await safeUpdate(interaction, {
             content: "Selecione os participantes que receberão a recompensa:",
             components: [...participantRows, confirmRow],
             embeds: []
@@ -631,7 +683,7 @@ client.on("interactionCreate", async (interaction) => {
         }
 
         fs.writeFileSync(actionsPath, JSON.stringify(data, null, 2));
-        await interaction.update({ embeds: [victoryEmbed], components: [], content: null });
+        await safeUpdate(interaction, { embeds: [victoryEmbed], components: [], content: null });
     }
 
     // Handler do botão que abre o modal de /setar (mover para antes do bloco genérico de buttons)
@@ -699,15 +751,15 @@ client.on("interactionCreate", async (interaction) => {
         try {
             const channel = await client.channels.fetch(targetChannelId);
             if (!channel || !channel.send) {
-                await interaction.reply({ content: "Erro: canal de envio não encontrado.", ephemeral: true });
+                await safeReply(interaction, { content: "Erro: canal de envio não encontrado.", ephemeral: true });
                 return;
             }
 
             await channel.send({ embeds: [embed], components: [row] });
-            await interaction.reply({ content: "Pedido enviado para aprovação.", ephemeral: true });
+            await safeReply(interaction, { content: "Pedido enviado para aprovação.", ephemeral: true });
         } catch (err) {
             console.error("Erro ao enviar pedido de set para canal:", err);
-            await interaction.reply({ content: "Erro ao enviar pedido. Contate o administrador.", ephemeral: true });
+            await safeReply(interaction, { content: "Erro ao enviar pedido. Contate o administrador.", ephemeral: true });
         }
 
         return;
@@ -807,18 +859,18 @@ client.on("interactionCreate", async (interaction) => {
                 }
 
                 updatedEmbed.setColor('#00FF00').setDescription((updatedEmbed.data.description || '') + `\n\n✅ Autorizado por **${approverDisplay}**`);
-                await interaction.update({ embeds: [updatedEmbed], components: [disabledRow] });
+                await safeUpdate(interaction, { embeds: [updatedEmbed], components: [disabledRow] });
                 return;
             }
 
             if (action === 'reject') {
                 updatedEmbed.setColor('#FF0000').setDescription((updatedEmbed.data.description || '') + `\n\n❌ Recusado por **${approverDisplay}**`);
-                await interaction.update({ embeds: [updatedEmbed], components: [disabledRow] });
+                await safeUpdate(interaction, { embeds: [updatedEmbed], components: [disabledRow] });
                 return;
             }
         } catch (err) {
             console.error('Erro ao processar botão pedir-set:', err);
-            await interaction.reply({ content: 'Erro ao processar essa solicitação.', ephemeral: true });
+            await safeReply(interaction, { content: 'Erro ao processar essa solicitação.', ephemeral: true });
             return;
         }
     }
@@ -874,4 +926,18 @@ client.on("interactionCreate", async (interaction) => {
     }
 });
 
-client.login(process.env.DISCORD_BOT_TOKEN);
+// Safe login: verifica token e trata erros para evitar crashes em hosts como Discloud
+(async () => {
+    const token = process.env.DISCORD_BOT_TOKEN;
+    if (!token) {
+        console.error('DISCORD_BOT_TOKEN não está definido. Abortando login.');
+        return;
+    }
+
+    try {
+        await client.login(token);
+    } catch (err) {
+        console.error('Erro ao tentar logar o bot:', err);
+        // Não relançar o erro — deixamos o processo vivo para permitir inspeção/recuperação
+    }
+})();
